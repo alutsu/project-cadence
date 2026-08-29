@@ -1,0 +1,621 @@
+# CADENCE — Game Design Document
+### v0.2 — supersedes v0.1
+#### Amended 2026-08-29 — M0 decisions [AMD]
+
+**Engine** Phaser v4 (TypeScript) · **Team** Solo · **Run length** 33–35 min
+
+**What changed from v0.1:** two math errors corrected (§7.4 Weave floor, §6.1 HP economy), five missing systems specified (defense, status timing, targeting, the Wait action, the full economy), and the production sections a solo developer actually needs added (§15–§19). Changes are flagged **[FIX]** or **[NEW]**.
+
+**Amendment 2026-08-29 (flagged [AMD]):** eight gaps and one contradiction found while planning M0 are resolved in-place — the Poise model (§4.6/§4.8/§6.2), tie-break Speed and hand overflow (§4.1), Wait's cost (§4.3), enemy Guard (§4.4), Bleed's decay (§4.5), the draw-decoupling counter (§4.7), and the provisional M0 deck (§5.1). See `docs/M0_PLAN.md` §2. Open question 1 remains open by design and is scheduled for M0's S8.
+
+---
+
+## 1. Pitch
+
+You are one adventurer descending a collapsing dungeon. You do not choose your cards — your class grants them as you level, the same ones every run. What you choose is what you carve into them.
+
+Every skill card has sockets. Sockets are scarce and paid for in permanent maximum HP. Gems are not authored, they're rolled from scavenged materials, ARPG-style. Removing a gem destroys it.
+
+Combat has no energy. Every card costs **time**. Play a heavy skill and the turn queue slides — the rat gets two actions before you act again. The queue is visible eight turns ahead, so this is a planning puzzle, not a gamble.
+
+And the world's rules move. Each descent, some tags are Ascendant and others Suppressed, and the alignment shifts as you go deeper. There is no build to look up, because the correct build didn't exist until the run generated it.
+
+**Hook:** *A deckbuilder where the cards are fixed, the time is the mana, and the meta is rerolled every run.*
+
+---
+
+## 2. Design pillars
+
+**P1 — Time is the only cost.** No energy. Every card has a Weight in ticks. "Strong" and "fast" are incomparable by construction, so neither can be strictly better.
+
+**P2 — The deck is given; the build is earned.** Card acquisition is deterministic. All expression flows into sockets and gems, where commitment is permanent.
+
+**P3 — Value is unstable, not hidden.** The player always sees how good each tag is *right now*. They can't know it in advance, and it changes mid-run.
+
+**P4 — Creativity is paid, not permitted.** Experimentation has its own currency.
+
+**P5 — Legibility above all.** Six systems, two numbers on screen.
+
+**P6 — Everything is measured in ticks. [NEW]** Damage over time, buffs, defense, cooldowns, and card recursion all use the same unit as the turn queue. No system in this game may use "turns" or "rounds" as a duration, because turns are asynchronous and per-actor. This is a hard architectural rule, not a preference — v0.1 violated it implicitly and it would have produced incoherent status effects.
+
+---
+
+## 3. Core loop
+
+```
+DESCEND → pick 2 of {Dungeon, Sanctum, Market} → Boss → Weave shifts → next Depth
+
+  DUNGEON  3–4 encounters → XP, gold, materials, relic chance
+  SANCTUM  heal OR craft (never both)
+  MARKET   gold: remove cards, buy relics/materials, attempt sockets
+```
+
+Per encounter:
+
+```
+Timeline advances → lowest next_act_tick acts
+  Player: draw 1 → play 1 card (or Wait) → card enters Cooldown → reschedule by Weight
+  Enemy:  execute telegraphed intent → reschedule
+  Between: tick-based effects resolve (DoT, Guard decay, buff expiry, Cooldown returns)
+```
+
+---
+
+## 4. Combat: Conditional Turn Battle
+
+### 4.1 The timeline
+
+Integer tick counter. Each actor holds `next_act_tick`. Lowest acts; ties → higher Speed → lower actor index. **[AMD]** The tie-break uses **effective** Speed, i.e. after Slow and Haste, so a Slow landing before a contested tick genuinely changes the order. The player is actor index 0 and therefore wins a mirror tie.
+
+```
+delay = ceil(action.weight * 100 / actor.effective_speed)
+actor.next_act_tick = now + delay
+```
+
+**Combat start [NEW]:** all actors are seeded at `next_act_tick = ceil(600 / speed)`. Faster actors act first; no coin flip. Player Speed 100 → tick 6; rat at 130 → tick 5.
+
+| Stat | Player start | Notes |
+|---|---|---|
+| Speed | 100 | Capped, see §4.7 |
+| Max HP | 70 | +6 per level → 136 at cap |
+| Hand cap | 6 | Drawing into a full hand is skipped **[AMD]** |
+| Draw | 1 per turn | |
+
+**Weight classes**
+
+| Class | Weight | Delay @ SPD 100 | Recovery |
+|---|---|---|---|
+| Light | 4 | 4 | 8 |
+| Standard | 6 | 6 | 14 |
+| Heavy | 10 | 10 | 26 |
+| Ultimate | 16 | 16 | 60 |
+
+### 4.2 The visible queue
+
+Next **8** turn slots render as a strip at the top of combat. Enemy intents are telegraphed, so their next Weight is known and the forecast is honest.
+
+Hovering a card **re-renders the queue in ghost form**. This is the core UX of the entire game; build it first (§18).
+
+### 4.3 The Wait action [NEW]
+
+**Gap in v0.1:** the player could be forced to play a bad card, or hold a hand of cards all on cooldown with no legal action.
+
+The player may always **Wait**: Weight 3, draw 1, gain 3 Guard. Waiting is a real tactic — letting a key card come off Cooldown, or ducking under an enemy's wind-up so their big hit lands while you're already recovering. If the hand is empty and no card can be played, Wait is auto-selected after a 1.5s beat.
+
+**[AMD] Wait's cost and limits.** Wait is an action, not a card: it enters no Cooldown pile and reschedules by the standard `ceil(3 * 100 / effective_speed)`. There is **no anti-spam rule** — 3 Guard barely outruns Guard's own 1-per-tick decay, so repeated Waiting loses ground to any enemy on its own. If playtesting shows turtling, the fix is a rising Weight on consecutive Waits, not a special-case restriction.
+
+**[AMD] Drawing into a full hand** (§4.1, hand cap 6) is **skipped**: the card stays on top of the draw pile and nothing is discarded. A full hand means the draw is waiting for you — holding cards has a cost, and no card is ever silently lost.
+
+### 4.4 Defense: Guard [NEW]
+
+**This was the largest hole in v0.1** — the document had no mitigation system at all, and StS-style Block ("expires at start of your turn") is incoherent when turns are asynchronous and one actor may take three turns to another's one.
+
+**Guard is time-shaped.** Gaining *N* Guard means: absorb up to *N* damage, and Guard **decays by 1 per tick**.
+
+- 12 Guard is 12 ticks of protection, or one big hit, whichever comes first.
+- Guard is checked and consumed before HP on every incoming hit.
+- Guard does not stack past **40**.
+- **[AMD] Enemies use the same Guard system.** Guard is a property of any actor, not a player mechanic, so defensive archetypes need no separate mitigation model. No v1 enemy in §12.2 gains Guard.
+- Because Guard decays in the same unit the queue uses, the player can read the queue and see *exactly* whether their Guard survives to the enemy's next action. Defense becomes a timing puzzle rather than a resource-per-turn calculation.
+
+This is the single most important addition in v0.2 and it should be prototyped alongside the queue.
+
+### 4.5 Status effects and durations [NEW]
+
+Every duration is in ticks. Never in turns.
+
+| Effect | Behaviour |
+|---|---|
+| **Poison** X | Deals X damage every **5 ticks**; X decreases by 1 per proc. Ignores Guard. |
+| **Bleed** X | Deals X damage whenever the afflicted actor **takes an action**. Duration in ticks. **[AMD]** X does not decay; Bleed ends when its duration expires. Poison punishes existing, Bleed punishes acting — so Bleed scales with the victim's Speed and Poison deliberately does not. |
+| **Burn** X | Deals X damage every 5 ticks; does not decay; expires after 20 ticks. |
+| **Slow** X | −X effective Speed for D ticks. |
+| **Haste** X | +X effective Speed for D ticks. |
+| **Weaken / Empower** | ±% damage dealt, for D ticks. |
+| **Brittle** | −Poise for D ticks. |
+
+Tick-based effects resolve in the timeline scheduler, not in actor turns, so a slow actor is not punished twice by DoT.
+
+**Poison Rat clarified:** stacking Poison on a fast actor is nasty because the rat gets more actions, but its Poison damage is on a fixed 5-tick clock and doesn't scale with the victim's speed. Fast player builds are not disproportionately punished by DoT. This was ambiguous in v0.1.
+
+### 4.6 Poise and Stagger
+
+Enemies have **Poise**. A single hit at or above the Poise threshold applies **Stagger**: `next_act_tick += 3`.
+
+**[AMD] Poise is a threshold, not a pool.** v0.2 described it both ways — as a threshold here and as accumulating "Poise damage" in §4.8 and §6.2 — which are different mechanics. It is a **threshold**: Poise does not deplete, chip damage never staggers, and the player's question is the single comparison *"can this card break it?"* rather than *"how many more hits?"*. This keeps Stagger a planned act and costs the UI no per-enemy tracked state (P5).
+
+**[FIX] Diminishing Stagger.** Each Stagger applied to the same enemy in one encounter is worth half the previous: 3 → 2 → 1 → 1 → 1 (floor 1). Without this, a Break build denies a slow boss every turn and the encounter becomes a non-game. v0.1 flagged this as an open question; it is now a rule.
+
+### 4.7 Speed cap and diminishing returns [FIX]
+
+**Bug in v0.1:** Speed multiplied turn frequency, card draw, *and* cooldown cycling simultaneously. Three multiplicative benefits on one stat is a runaway — a Haste build would trivialize the game.
+
+```
+effective_speed = 100 + gain            if gain <= 40
+effective_speed = 140 + (gain - 40)/2   if gain > 40
+hard cap = 180
+```
+
+Additionally, **draw is decoupled from Speed above 140**: beyond that threshold, the player draws 1 card every *other* turn. Extra actions still accrue; extra cards do not. **[AMD]** "Every other turn" counts **the actor's own committed actions** — draw on even-numbered ones. The count is local to the actor and survives any reordering of the queue; there is no shared turn counter in this game and none may be introduced (P6). Speed remains excellent, but it stops being the only stat worth having.
+
+### 4.8 Targeting and encounter composition [NEW]
+
+- Encounters hold **1–4 enemies**. No positioning, no lanes — targeting is a click.
+- Default target persists between turns; killing a target auto-advances to the nearest.
+- **AoE** cards hit all enemies at reduced damage (typically 60%). **[AMD]** The Poise *check* is made against each enemy independently, using that enemy's own reduced damage figure — so an AoE that staggers a rat will usually not stagger a Warden. (This previously read "apply Poise damage", which implied a pool; see §4.6.)
+- Enemy AI targets the player only (single-hero design), so "threat" and "taunt" mechanics do not exist and should not be added.
+
+### 4.9 Cards and the Cooldown pile
+
+Played cards enter the **Cooldown pile** with `return_tick = now + recovery`, then return to the **bottom of the draw pile**. Empty draw pile on a draw = draw nothing (the wait is the cost; do not reshuffle early).
+
+Deck size 12–16.
+
+### 4.10 End of combat
+
+All Guard, statuses, and Cooldowns clear. Cooldown cards return to the deck. HP, Max HP loss, and Saturation persist.
+
+---
+
+## 5. Progression in a run
+
+### 5.1 Levels and skills
+
+Fixed authored skill table. Level *N* grants skill *N*, always, in order. **There is no card selection screen anywhere in the game.**
+
+| Level | Grants | Deck size | Max HP |
+|---|---|---|---|
+| 1 | 4 starters + 1 signature | 5 | 70 |
+| 2–11 | 1 skill each | 6–15 | 76–124 |
+| 12 (cap) | Capstone | 16 | 136 |
+
+**[AMD] The skill table is not yet authored.** §17 budgets 16 class skills; none are specified in this document. M0 runs on a **provisional 12-card deck** (5 Light / 4 Standard / 2 Heavy / 1 Ultimate) in `src/data/cards.m0.json`, sized to make the Cooldown pile bite. Whatever survives the M0 gate is promoted into this section as the real table; nothing in that file is a design commitment until then.
+
+**[FIX] Max HP grows +6 per level.** v0.1 had a fixed 70 Max HP while charging 8–18 Max HP per socket — socketing six cards would have consumed the entire health pool. A growing pool makes the socket cost a real but survivable trade, and it's necessary for boss scaling regardless.
+
+### 5.2 XP
+
+```
+xp = base_xp * clamp(1 + 0.18 * (enemy_level - player_level), 0.10, 1.80)
+```
+
+### 5.3 Threat
+
+Each dungeon node entered raises world **Threat** by 1. `enemy_level = depth_base + floor(Threat / 2)`. Farming pushes enemies past you rather than behind you — self-limiting, no timer UI.
+
+---
+
+## 6. Build system: sockets and gems
+
+### 6.1 Sockets [FIX — economy rebalanced]
+
+Cards have 0–3 sockets. **The player starts with one socket already open on their signature card** — v0.1 began the run with zero build expression, meaning the first two Depths had no gem play at all. Onboarding hole, now closed.
+
+Socket cost is a **percentage of current Max HP**, so it scales with level automatically:
+
+| Socket # on a card | Cost | Success |
+|---|---|---|
+| 1st | 8% Max HP | 100% |
+| 2nd | 12% Max HP | 75% |
+| 3rd | 18% Max HP + 1 Insight | 45% |
+
+Cost is **maximum** HP, not current. Healing cannot refund it — this closes the "healer socketed everything" exploit at the root instead of taxing it with RNG.
+
+**[NEW] Floor:** Max HP cannot be reduced below **40% of the level baseline**. Prevents a death-spiral build that cannot survive a single boss hit, and prevents an unwinnable-state softlock.
+
+On failure: HP spent, no socket, card flagged **Scarred** (+50% cost on its next attempt, does not stack past +50%).
+
+### 6.2 Gems
+
+```json
+{
+  "id": "gem_7f3a", "frame": "REPEAT", "tier": 2,
+  "tags": ["Multi", "Physical"],
+  "weight_delta": 2,
+  "effects": [
+    { "type": "EXTRA_STRIKE", "value": 1 },
+    { "type": "DAMAGE_MULT", "value": -0.35 }
+  ],
+  "affixes": [{ "type": "RECOVERY_DELTA", "value": -3 }]
+}
+```
+
+**Frames** (player-chosen) determine the effect family. **Values** roll.
+
+| Frame | Effect | Drawback |
+|---|---|---|
+| REPEAT | +1 strike, damage split | +Weight |
+| CHARGE | Gain a Charge on kill | Dead socket until charged |
+| SPEND | Consume Charges for damage | Dead without a Charge source |
+| SIPHON | Heal % of damage dealt | −Damage |
+| BREAK | +% damage counted for the Poise check, +Stagger **[AMD]** | −Damage |
+| HASTE | −Weight or −Recovery | −Damage or −Duration |
+| KINDLE | Convert damage to a tag | Exposes you to that tag's Weave value |
+| ECHO | Card returns to hand instead of Cooldown, 1×/fight | +Recovery permanently |
+| **WARD** [NEW] | Card also grants Guard | +Weight |
+| **LINGER** [NEW] | Extend status durations | −Status magnitude |
+
+WARD and LINGER exist because v0.1's frame list was entirely offensive, which would have made defensive play unbuildable.
+
+**Crafting:** spend materials → material rarity sets Tier (1–4) → choose a Frame → values roll → spend **1 Insight** to reroll values (not the Frame).
+
+**Socketing is permanent.** Removal is free but destroys the gem.
+
+### 6.3 Why this doesn't become Path of Exile
+
+PoE's meta is rigid *because of* its depth: a huge but static option space with fixed values makes looking up the answer more rational than experimenting. Cadence breaks that with three coupled constraints — gems are **rolled** so the answer can't be a list; sockets are **scarce and permanent** so the question is "which do I commit to now" not "which is best"; and tag values **move every run** so the optimum is a function of run state, not of the patch.
+
+---
+
+## 7. The Weave
+
+One panel. Every tag shows one final multiplier.
+
+```
+final = clamp(attunement × (1 − enemy_resist) × (1 − saturation), 0.30, 2.00)
+```
+
+### 7.1 Attunement
+
+Run start rolls **2 Ascendant** (×1.35, −1 Weight) and **2 Suppressed** (×0.70, +1 Weight) tags.
+
+**[FIX] Shift schedule.** With only 4 Depths, v0.1's "announce one Depth ahead" left Depth 1 unannounced and Depth 4 pointless. Corrected: the full Attunement is visible at run start; it re-rolls one Ascendant and one Suppressed slot at the **start of Depth 2 and Depth 3 only**, each announced at the end of the preceding Depth. Two shifts per run — enough to force adaptation, few enough to plan around.
+
+### 7.2 Enemy resistance
+
+Generated enemies carry 0–60% tag resistance. Hard immunity exists on **elites only**, one tag maximum, always shown on the map node **before you commit**.
+
+### 7.3 Saturation [NEW math]
+
+Tracks the tag dealing most of your damage over the last 6 encounters.
+
+- **+6%** per encounter where one tag exceeds 50% of your damage
+- **−5%** per encounter otherwise
+- **Cap 30%**
+
+### 7.4 The floor [FIX — this was a real bug]
+
+v0.1 multiplied three reductions without a floor. Worst case: `0.70 × 0.40 × 0.70 = 0.196` — an 80% damage reduction, which flatly contradicts the claim that nothing bricks a build. **The clamp of 0.30 in the formula above is mandatory.** A player at the floor is in serious trouble and should be, but they can still play.
+
+The Weave panel must display the *final clamped* number, and show a distinct icon when the floor is active so the player understands why the math stopped moving.
+
+---
+
+## 8. Insight — paying for creativity
+
+Single currency, earned only by doing what a cautious player wouldn't. Spent on gem rerolls and third sockets — it converts directly into build power.
+
+### 8.1 Riddles
+
+3 per run, generated at start, revealed as hints. Verified by predicates over the combat event log.
+
+> *Deal 40 damage in one action with a Charge-tagged skill.*
+> *Win an encounter never holding more than 3 cards.*
+> *Stagger one enemy three times before it acts twice.*
+
+Reward: 2 Insight + materials. **[NEW]** Run-long riddles are checked at run end; encounter-scoped riddles resolve immediately with a visible toast.
+
+### 8.2 Wagers
+
+| Wager | Reward | Failure |
+|---|---|---|
+| No Heavy or Ultimate | 2 Insight | −15 gold |
+| Zero damage taken in one encounter | 1 Insight + material | — |
+| Clear with ≤4 distinct cards played | 3 Insight | −1 Insight |
+
+### 8.3 Saturation
+
+The always-on passive push away from single-solution play (§7.3).
+
+---
+
+## 9. Economy [NEW — entirely missing from v0.1]
+
+v0.1 spent gold in three places and never said where gold came from. Full ledger:
+
+**Sources**
+
+| Source | Gold | Materials | XP | Insight |
+|---|---|---|---|---|
+| Normal encounter | 15–25 | 35% chance T1 | base | — |
+| Elite | 40–60 | T2 guaranteed | ×2.5 | — |
+| Boss | 100–140 | T3 guaranteed | ×4 | 1 |
+| Riddle | — | 1 tier-scaled | — | 2 |
+| Wager | — | sometimes | — | 1–3 |
+
+**Sinks**
+
+| Sink | Cost |
+|---|---|
+| Card removal | 60 → 120 → 240 → 480 gold |
+| Relic (Market) | 90–160 gold |
+| Materials (Market) | 40 (T1) / 90 (T2) / 200 (T3) |
+| Socket attempt | Max HP (+1 Insight for 3rd) |
+| Gem reroll | 1 Insight |
+| Sanctum | free, but costs the node |
+
+**Materials taxonomy:** Shard (T1) → Core (T2) → Heart (T3) → Sigil (T4). Three of a tier upgrade into one of the next. This gives low-tier drops a permanent floor of value and prevents dead loot late in a run.
+
+**Expected run totals** (for balance sim targets): ~450 gold, ~9 materials, ~7 Insight, 5–7 sockets opened, 4–6 gems crafted.
+
+**Nothing carries between runs.** Insight, gold, and materials are all zeroed on run end.
+
+---
+
+## 10. Relics [NEW — referenced five times in v0.1, never specified]
+
+Passive permanent modifiers, 1 per elite kill (choice of 2) plus Market purchases. Target **24 for v1**. Relics are the second variance source that makes run 1 differ from run 50, and they must not simply add damage.
+
+| Category | Example |
+|---|---|
+| **Timeline** | *Metronome* — your first action each encounter costs 0 Weight |
+| **Timeline** | *Undertow* — Stagger you apply lasts +1 tick, but −10 Speed |
+| **Economy** | *Prospector's Eye* — +1 material tier from elites, −20% gold |
+| **Weave** | *Prism* — Suppressed tags are only ×0.85, Ascendant only ×1.15 |
+| **Weave** | *Zealot's Blinders* — Saturation cap becomes 50%, but Ascendant becomes ×1.7 |
+| **Socket** | *Bone Ledger* — socket attempts cost 4% less Max HP, but failures also Scar an adjacent card |
+| **Deck** | *Second Wind* — Wait draws 2 instead of 1 |
+| **Risk** | *Glass Sigil* — +30% damage dealt and taken |
+
+Every relic should carry a real drawback. Pure upgrades create a known-correct relic ranking, which is exactly the meta this design exists to avoid.
+
+---
+
+## 11. Map and run structure
+
+**4 Depths.** Each offers 2 Dungeons, 1 Sanctum, 1 Market; the player takes **2 nodes**, then the Boss.
+
+The node types pay in **different currencies** (XP vs. HP vs. gold), so they can't be ranked against each other — there's nothing to solve.
+
+**Commitment before information:** a Dungeon node shows only its Threat rating and one **Omen tag** hinting at the resistance profile. Composition is unknown until entered.
+
+**Timing budget** (tunable):
+
+| Segment | Count | Avg | Subtotal |
+|---|---|---|---|
+| Normal | 12 | 65s | 13:00 |
+| Elite | 4 | 100s | 6:40 |
+| Boss | 4 | 150s | 10:00 |
+| Out-of-combat | — | — | ~5:00 |
+| **Total** | | | **≈ 34:40** |
+
+If long in playtest, cut Depth 2 to a single Dungeon node before touching encounter pacing.
+
+---
+
+## 12. Enemies and bosses
+
+### 12.1 Generation
+
+`archetype + modifier + level`. Scaling formulas [NEW]:
+
+```
+enemy_hp     = base_hp * (1 + 0.22 * level)
+enemy_damage = base_dmg * (1 + 0.16 * level)
+enemy_poise  = base_poise * (1 + 0.12 * level)
+enemy_speed  = base_speed        // never scales — Speed is the player's axis
+```
+
+Speed deliberately does not scale with level. If enemy Speed grew, the entire queue-planning skill would degrade over a run.
+
+### 12.2 Archetypes (v1 target: 14)
+
+| Name | SPD | Role |
+|---|---|---|
+| Poison Rat | 130 | Fast chip, low Poise — free Stagger practice |
+| Bleeding Berserker | 90 | High HP, self-damage burst |
+| Emberhide | 100 | 50% Fire resist, retaliates on hit |
+| Warden | 70 | Huge Poise, telegraphs a Weight-16 hit |
+| Chime Adept | 115 | Applies Slow, punishes Heavy cards |
+| Glutton | 80 | Heals by consuming its own allies |
+
+### 12.3 Boss design rules [NEW]
+
+Each boss must attack a different assumption:
+
+1. **Depth 1 — The Clockeater.** Teaches the queue. Long wind-up, high Poise; the fight is a Stagger puzzle. Beatable by any build.
+2. **Depth 2 — The Twin Censers.** Two bodies, one shared HP pool, opposite resistances. Punishes mono-tag builds; the first real test of Saturation awareness.
+3. **Depth 3 — The Archivist.** Copies your most-played card and uses it against you. Punishes low-variety play directly.
+4. **Depth 4 — The Hollow Hour.** Its Speed rises each time it acts. A pure DPS race with a hard timer, testing whether the build can actually close.
+
+No boss may have a hard immunity. No boss may apply unavoidable Max HP loss.
+
+---
+
+## 13. Death, failure, and run end [NEW — undefined in v0.1]
+
+- HP ≤ 0 ends the run immediately. No revives, no second chances.
+- Run summary: depth reached, build snapshot (cards + sockets + gems), Weave state, riddles completed, seed.
+- All currencies zeroed. Only **unlocks** persist (§14).
+- **[NEW] Seed replay:** the summary offers "Retry this seed." Free, no reward penalty. This is how players learn that a loss was a decision and not a dice roll — an important trust mechanism in a game with this much randomness.
+
+---
+
+## 14. Meta-progression
+
+**Rule: unlocks widen the option space and never grant raw power.**
+
+Unlockable: gem Frames, relics, dungeon types, riddles, enemy archetypes, alternate starting loadouts (sidegrades only).
+
+Never unlockable: +HP, +damage, +starting gold, or anything making run 50 numerically stronger than run 1. Power-based metaprogression manufactures a known-correct unlock order — the exact meta this design exists to avoid.
+
+**[NEW] Unlock pacing:** ~1 unlock per 2 runs for the first 20 runs, then slowing. Unlocks are earned by *milestones*, not currency (first Depth-3 clear, first 3-socket card, first run with zero Heavy cards played), so they double as a tutorial for advanced play.
+
+**[NEW] Post-clear difficulty: Depths.** After the first win, optional modifiers stack (Depth I–X): higher Threat floor, a third Suppressed tag, Saturation cap raised, elite immunity on normals. Standard roguelite retention structure; without it, the game ends at first win.
+
+---
+
+## 15. UX and accessibility [NEW]
+
+**Critical:** tags carry mechanical meaning and are the game's core language. They must **never** be encoded in color alone. Every tag has a distinct glyph, and the Weave panel shows numerals, not bars.
+
+- **Queue strip** — 8 slots, portraits, intent icons, damage numbers, ghost preview on hover.
+- **Weave panel** — collapsible, always accessible, one row per tag: glyph, name, final multiplier, floor indicator.
+- **Card face** — Weight and Recovery are as prominent as damage. If the player has to hunt for Weight, the pillar fails.
+- **Damage preview** — hovering a card shows post-Weave damage against the current target, not base damage. The player should never do multiplication in their head.
+- **Speed / animation** — full skip toggle. A 35-minute run cannot afford unskippable animation.
+- **Text size** setting, minimum 16px equivalent.
+- **[NEW] Undo-free design** — no undo, but confirm dialogs on all irreversible acts (socketing, gem removal, card removal).
+
+---
+
+## 16. Save, platform, and input [NEW]
+
+- **Target:** desktop web + Steam wrapper. Mouse-first; the queue-hover interaction needs a real pointer. **Touch is out of scope for v1** — hover-preview has no touch equivalent and faking it with tap-to-preview degrades the core loop.
+- **Mid-run save:** mandatory. A 35-minute run must be resumable. Serialize full run state + all PRNG stream positions to IndexedDB after every node transition and every encounter end. Never mid-encounter — an encounter is atomic; resume replays it from its start state.
+- **Save format is versioned.** Migration or invalidation on schema change, decided before the first public build.
+- **Resolution:** 16:9, design at 1920×1080, scale down to 1280×720.
+
+---
+
+## 17. Content budget for v1 [NEW]
+
+The number a solo developer most needs and v0.1 didn't have.
+
+| Content | v1 target | Notes |
+|---|---|---|
+| Classes | **1** | A second doubles content cost; ship one, polish it |
+| Class skills | 16 | The full level table |
+| Starting loadout variants | 3 | Cheap variance; unlock-gated |
+| Gem frames | 10 | × 4 tiers |
+| Gem affixes | 20 | Shared pool |
+| Enemy archetypes | 14 | |
+| Enemy modifiers | 8 | Multiplies archetypes to ~112 combinations |
+| Bosses | 4 | |
+| Elites | 6 | |
+| Relics | 24 | |
+| Riddles | 30 | |
+| Dungeon types | 5 | |
+
+Content is authored in JSON. Nothing on this list requires new code once the systems in §4–§8 exist — which is the point of building the sim layer first.
+
+---
+
+## 18. Build order and milestones [NEW]
+
+**M0 — Feel test (4–6 weeks).** Do not build the map, gems, economy, or art.
+1. Tick scheduler + visible 8-slot queue
+2. Hand, one card per turn, Weight moves the queue
+3. **Ghost preview on hover** ← the whole game
+4. Cooldown pile returning cards by tick
+5. Guard with 1/tick decay
+6. Poise/Stagger with diminishing returns
+7. Three enemies with real intents
+
+**Gate:** play it for an hour with no gems at all. If moving your position in the turn queue isn't fun by itself, stop. The gem system will not save it — it will decorate it.
+
+**M1 — Build layer (6–8 weeks).** Sockets, gems, generative crafting, the Weave panel, Saturation.
+**Gate:** two testers reach materially different builds from the same seed.
+
+**M2 — Run layer (6 weeks).** Map, economy, relics, XP/Threat, save/resume, one boss.
+**Gate:** a complete 35-minute run.
+
+**M3 — Content (8–10 weeks).** Fill §17. Four bosses, riddles, wagers, unlocks.
+**M4 — Balance and polish (open-ended).** §19.
+
+---
+
+## 19. Balance methodology [NEW]
+
+A solo developer cannot balance a system this combinatorial by hand. The headless `/sim` layer (§20) is what makes this tractable — this is the primary reason for that architecture.
+
+- **Automated runs:** scripted policy agents (greedy-damage, greedy-tempo, random) run 10,000 seeds nightly. Track win rate by Depth, encounter duration, damage-taken distribution, and time-to-kill.
+- **Red flags:** any gem frame appearing in >40% of winning builds; any card played in <5% of turns; any encounter with a duration variance above 2×.
+- **Telemetry from playtesters:** run seed, build snapshot at each Depth, death cause, encounter durations, cards never played. Opt-in, anonymous, and disclosed in-game.
+- **The key metric for this design specifically:** *build diversity among winning runs*. If the top 3 gem/skill combinations account for more than 35% of wins, the anti-meta thesis is failing and the destabilizers in §7 need strengthening.
+
+---
+
+## 20. Implementation notes (Phaser v4, TypeScript)
+
+### 20.1 Separate simulation from rendering
+
+The combat model is a **pure, headless, deterministic module with zero Phaser imports.** Non-negotiable. It enables §19's automated balance, makes the ghost preview trivial (clone state, apply action, read queue), and means an engine change costs only `/scenes` and `/ui`.
+
+```
+/src
+  /sim          ← no Phaser
+    timeline.ts   min-heap scheduler on next_act_tick
+    combat.ts     reducer: (State, Action) => State
+    effects.ts    tick-based status resolution
+    weave.ts      tag multiplier math (§7)
+    rng.ts        seeded PRNG
+  /data         ← JSON: cards, gems, frames, affixes, enemies, relics, riddles
+  /run          ← run state, map gen, save/serialize
+  /scenes       ← Phaser scenes
+  /ui           ← queue strip, hand, weave panel, forge
+```
+
+### 20.2 Determinism
+
+One run seed, **separate PRNG streams** for map, gem rolls, enemy generation, and combat variance — so changing one system doesn't reshuffle the others during testing. Stream positions are part of the save (§16). Enables seed replay (§13) and daily challenges for free.
+
+### 20.3 Combat as a reducer
+
+`(State, Action) => State`, immutable, emitting an event log. Riddles, achievements, telemetry, replays, and the ghost preview all read that log. No game logic in Phaser update loops.
+
+### 20.4 Data-driven everything
+
+Cards, gems, frames, affix pools, enemies, relics, riddles in JSON. As a solo developer, rebalancing without recompiling is the difference between shipping and not.
+
+### 20.5 Engine caveat
+
+Verify Phaser v4 API specifics against current documentation — v4 changed enough from v3 that older tutorials will mislead. The `/sim` split limits the blast radius of any engine surprise.
+
+---
+
+## 21. Risk register [NEW]
+
+| # | Risk | Severity | Mitigation |
+|---|---|---|---|
+| 1 | Queue-planning isn't fun on its own | **Fatal** | M0 gate before any other work |
+| 2 | Fixed deck makes runs feel identical | High | Starting loadout variants (§17), relics (§10) — *not* card choice |
+| 3 | Generative gems produce mostly junk, so crafting feels bad | High | Tier floors on roll ranges; a Tier-3 gem is never worse than a Tier-1 |
+| 4 | Weave feels random rather than strategic | High | Announce shifts one Depth ahead; final multipliers always visible |
+| 5 | Max HP economy makes players never socket | Medium | Instrument socket-attempt rate in telemetry; target 5–7 per run |
+| 6 | 35-minute target slips to 50+ | Medium | Cut nodes, not encounter pacing |
+| 7 | Ultimates never worth playing | Medium | See open question 1 |
+| 8 | Solo scope overrun | **High** | One class. §17 is a ceiling, not a wishlist |
+
+---
+
+## 22. Open questions
+
+1. **Ultimates (Weight 16) may be unplayable.** Four rat turns for one card is hard to justify. Candidate fixes: Ultimates are cast from the Cooldown pile with a wind-up the queue displays; or they grant Insight on kill; or they exist only as capstone payoffs with a Weight refund on kill. **Unresolved — resolve in M0.** **[AMD]** Method fixed: all three candidates are built behind a runtime toggle in M0's S8 and played for 20 minutes each; the winner is written into §4.1 and here, and the losing branches are deleted before M1. Candidate (b) is measurable only once Insight exists, so it is a proxy at best. See `docs/M0_PLAN.md` §4 S8.
+2. **Is the fixed deck too deterministic?** If yes, the fix is loadout variants, never a card-choice screen.
+3. **Are three sockets too many for legibility?** May cap at 2.
+4. **Insight reroll cost of 1 is a guess.** If rerolling is cheap, generative crafting collapses into deterministic crafting and pillar P3 dies.
+5. **Does the player need any way to gain Max HP back?** Currently the only direction is down. A rare relic or Sanctum option may be needed to prevent a fragility death-spiral, but it partly undermines the socket cost.
+6. **Guard cap of 40 and decay of 1/tick are untested.** Guard is the game's only mitigation; getting this wrong makes the game either trivial or brutal.
+
+---
+
+## 23. Anti-meta audit
+
+| Cause of meta-gravitation | Addressed by | Strength |
+|---|---|---|
+| Static, knowable content | Rolled gems, shifting Attunement, generated enemies | Strong |
+| Single measurement axis | Time cost, Poise/Stagger as a second win condition, non-comparable node currencies | Strong |
+| Free acquisition | Max-HP socket cost, permanent gem commitment, escalating removal | Strong |
+
+The deck itself remains fully knowable — deliberately. That's the mastery floor players need before they'll risk experimenting at all.
