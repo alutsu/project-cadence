@@ -6,7 +6,7 @@
 
 **What changed from v0.1:** two math errors corrected (§7.4 Weave floor, §6.1 HP economy), five missing systems specified (defense, status timing, targeting, the Wait action, the full economy), and the production sections a solo developer actually needs added (§15–§19). Changes are flagged **[FIX]** or **[NEW]**.
 
-**Amendment 2026-08-29 (flagged [AMD]):** eight gaps and one contradiction found while planning M0 are resolved in-place — the Poise model (§4.6/§4.8/§6.2), tie-break Speed and hand overflow (§4.1), Wait's cost (§4.3), enemy Guard (§4.4), Bleed's decay (§4.5), the draw-decoupling counter (§4.7), and the provisional M0 deck (§5.1). See `docs/M0_PLAN.md` §2. Open question 1 remains open by design and is scheduled for M0's S8.
+**Amendment 2026-08-29 (flagged [AMD]):** eight gaps and one contradiction found while planning M0 are resolved in-place — the Poise model (§4.6/§4.8/§6.2), tie-break Speed and hand overflow (§4.1), Wait's cost (§4.3), enemy Guard (§4.4), Bleed's decay (§4.5), the draw-decoupling counter (§4.7), and the provisional M0 deck (§5.1) — and the game's presentation is specified for the first time (§15.1: first-person, cards held in hand, enemies facing the camera). See `docs/M0_PLAN.md` §2. Open question 1 remains open by design and is scheduled for M0's S8.
 
 ---
 
@@ -466,6 +466,37 @@ Never unlockable: +HP, +damage, +starting gold, or anything making run 50 numeri
 ---
 
 ## 15. UX and accessibility [NEW]
+
+### 15.1 Presentation: first person, deliberately plain [AMD]
+
+**The camera is the player's own eyes.** There is no player avatar on screen. The hand
+is rendered as cards **held in the player's hands** along the bottom of the frame, angled
+as if looked down at; enemies stand **in front of the camera**, facing you, at the depth
+their position in the encounter implies. Nothing else occupies the play space.
+
+This is a presentation decision, not a new system, and it is chosen for three reasons:
+
+- It is **the cheapest thing to build well** — a solo developer shipping a 35-minute
+  roguelite gets one readable screen, not a diorama. Flat card faces, enemy silhouettes,
+  and typography carry the whole game.
+- It matches the design. This is a **single-hero** game (§4.8): no party, no positioning,
+  no lanes. A third-person view would show one figure standing alone, which communicates
+  nothing the queue strip does not already say better.
+- It puts the hand where the attention is. The player's two loops are *read the queue*
+  and *choose a card*; holding the cards in frame makes the second one physical.
+
+**Visual budget.** Flat colour, glyphs, and text. Enemies are silhouettes with an intent
+badge. No environment art, no particle systems beyond a hit flash, no camera movement
+except a Stagger nudge (§4.6) — that one moment is the game's payoff and earns its
+animation. Everything here is skippable per the animation rule below.
+
+**[AMD] Consequence — the player has no portrait.** §15's queue strip lists "portraits",
+which assumes every actor has a face to show. The player never sees their own, so the
+player's slots in the strip are marked with a **distinct non-portrait token** (the held-card
+glyph), not an invented avatar. It must remain the single most identifiable mark in the
+strip: the player's own position is the one thing they are always looking for.
+
+### 15.2 Rules
 
 **Critical:** tags carry mechanical meaning and are the game's core language. They must **never** be encoded in color alone. Every tag has a distinct glyph, and the Weave panel shows numerals, not bars.
 

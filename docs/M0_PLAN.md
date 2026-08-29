@@ -39,7 +39,7 @@ The seven §18 items, plus three things they structurally require:
 Map, Depths, nodes, Sanctum, Market · gems, frames, sockets, crafting, Insight ·
 the Weave, Attunement, Saturation, resistances · economy, gold, materials, relics ·
 XP, levels, Threat · riddles, wagers · save/resume · run structure and death handling ·
-art, audio, juice beyond what legibility requires · the second class, the other 11
+art and audio (the §15.1 framing is built with placeholder shapes), juice beyond what legibility requires · the second class, the other 11
 enemy archetypes, all bosses.
 
 If a task in this plan seems to need one of those, it does not — write the smallest
@@ -139,8 +139,14 @@ test (same seed + same actions ⇒ identical event log) passes.
 
 ### S2 — Queue strip and hand on screen (4 days)
 
-- `CombatScene` wiring only; `QueueStrip` renders 8 slots from `forecast.ts`, with
-  portrait, actor name, and the tick each slot lands on.
+- `CombatScene` wiring only; `QueueStrip` renders 8 slots from `forecast.ts`, with the
+  actor's mark, its name, and the tick each slot lands on. The player's slots use the
+  held-card token, not a portrait — the player has no avatar (GDD §15.1).
+- **Layout follows GDD §15.1**: first-person framing, hand held along the bottom of the
+  frame, enemies facing the camera above it, queue strip across the top. In M0 that is
+  flat rectangles, silhouettes, and type — placeholder shapes, no art (§1, out of scope).
+  The framing is a layout decision and costs nothing now; getting it wrong later costs a
+  rewrite of every view's coordinate assumptions.
 - `Hand` + `CardFace`. **Weight and Recovery are as prominent as damage** (§15) — if the
   player has to hunt for Weight, the pillar fails and the sprint is not done.
 - Click a card to play it; click to target; the strip re-renders from the new state.
