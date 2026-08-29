@@ -23,6 +23,8 @@ function actor(spec: ActorSpec): Actor {
     hp: 10,
     maxHp: 10,
     guard: 0,
+    poise: 0,
+    staggersTaken: 0,
     statuses: [],
     nextActTick: tick(at),
     actionsCommitted: 0,

@@ -5,6 +5,7 @@ import { findCard, type CardCatalogue } from './card.ts';
 import { advanceTime } from './effects.ts';
 import { absorb, gainGuard } from './guard.ts';
 import { OPENING_HAND, drawOne, sendToCooldown, shuffle } from './piles.ts';
+import { breaksPoise, stagger } from './poise.ts';
 import type { Rng } from './rng.ts';
 import type { CombatEvent } from './events.ts';
 import type { ActorId, CardId } from './ids.ts';
@@ -41,6 +42,8 @@ export interface ActorSeed {
   readonly side: Actor['side'];
   readonly baseSpeed: number;
   readonly maxHp: number;
+  /** GDD §4.6. Zero means nothing staggers this actor — the player's case. */
+  readonly poise: number;
   readonly intent: Intent | null;
 }
 
@@ -107,6 +110,8 @@ function seedActor(seed: ActorSeed, index: number): Actor {
     hp: seed.maxHp,
     maxHp: seed.maxHp,
     guard: 0,
+    poise: seed.poise,
+    staggersTaken: 0,
     statuses: [],
     nextActTick: combatSeedTick(effectiveSpeed(seed.baseSpeed, NO_SPEED_GAIN)),
     actionsCommitted: 0,
@@ -144,9 +149,16 @@ function applyDamage(state: CombatState, order: DamageOrder): CombatStep {
   if (absorbed > 0) {
     events.push({ kind: 'guard_absorbed', at: state.now, actor: order.target, amount: absorbed });
   }
+
+  // GDD §4.6: a single hit at or above the Poise threshold staggers. The check
+  // uses the damage the attack carried, before Guard soaked any of it.
+  const shaken = isAlive(wounded) && breaksPoise(wounded, amount) ? stagger(wounded) : null;
+  if (shaken !== null) {
+    events.push({ kind: 'staggered', at: state.now, actor: order.target, delay: shaken.delay });
+  }
   if (!isAlive(wounded)) events.push({ kind: 'actor_died', at: state.now, actor: order.target });
 
-  return { state: withActor(state, wounded), events };
+  return { state: withActor(state, shaken?.actor ?? wounded), events };
 }
 
 /** GDD §4.5: Bleed deals its damage whenever the afflicted actor acts. */

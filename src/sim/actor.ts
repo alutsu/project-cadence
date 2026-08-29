@@ -29,6 +29,10 @@ export interface Actor {
   readonly maxHp: number;
   /** Time-shaped mitigation: absorbs damage and decays 1 per tick (GDD §4.4). */
   readonly guard: number;
+  /** The single-hit threshold that staggers this actor (GDD §4.6). 0 = immune. */
+  readonly poise: number;
+  /** Staggers landed this encounter, for the diminishing ladder (GDD §4.6). */
+  readonly staggersTaken: number;
   readonly statuses: readonly Status[];
   readonly nextActTick: Tick;
   /** The actor's own action count, for the draw rule above the soft cap (§4.7). */

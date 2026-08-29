@@ -78,6 +78,13 @@ export interface ActionPreview {
   readonly enemyTurnsBeforePlayer: number;
   /** What those turns would cost, at their telegraphed damage. */
   readonly incomingDamage: number;
+  /** Enemies this action would stagger, and by how much (GDD §4.6). */
+  readonly staggers: readonly StaggerPreview[];
+}
+
+export interface StaggerPreview {
+  readonly actor: ActorId;
+  readonly delay: Tick;
 }
 
 /**
@@ -110,6 +117,9 @@ export function previewAction(state: CombatState, action: Action): ActionPreview
     playerNextTick,
     enemyTurnsBeforePlayer: before.length,
     incomingDamage: before.reduce((total, slot) => total + intentDamage(projected, slot), 0),
+    staggers: result.step.events
+      .filter((event) => event.kind === 'staggered')
+      .map((event) => ({ actor: event.actor, delay: event.delay })),
   };
 }
 

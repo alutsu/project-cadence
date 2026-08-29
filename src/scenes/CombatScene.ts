@@ -141,9 +141,14 @@ export class CombatScene extends Phaser.Scene {
     const result = reduce(this.state, action);
     if (!result.ok) return;
 
-    this.state = advanceToDecision(result.step.state).state;
+    const advanced = advanceToDecision(result.step.state);
+    this.state = advanced.state;
     this.target = this.currentTarget();
     this.renderAll();
+
+    for (const event of [...result.step.events, ...advanced.events]) {
+      if (event.kind === 'staggered') this.views?.queue.flashStagger(event.actor, event.delay);
+    }
   }
 
   /** GDD §4.8: the target persists, and killing it advances to the next enemy. */

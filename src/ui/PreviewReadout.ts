@@ -45,15 +45,18 @@ export class PreviewReadout {
     this.headline.setText(`${label} — ${landing}`).setColor(PLAYER_INK);
 
     const dealt = preview.hits.reduce((total, hit) => total + hit.amount, 0);
+    const parts = [
+      `${String(preview.enemyTurnsBeforePlayer)} enemy ${plural(preview.enemyTurnsBeforePlayer)} first`,
+      `${String(preview.incomingDamage)} incoming`,
+      `${String(dealt)} dealt`,
+    ];
+    for (const stagger of preview.staggers) {
+      parts.push(`STAGGER +${String(stagger.delay)}`);
+    }
+
     this.detail
-      .setText(
-        [
-          `${String(preview.enemyTurnsBeforePlayer)} enemy ${plural(preview.enemyTurnsBeforePlayer)} first`,
-          `${String(preview.incomingDamage)} incoming`,
-          `${String(dealt)} dealt`,
-        ].join('   ·   '),
-      )
-      .setColor(preview.incomingDamage > 0 ? ENEMY_INK : MUTED);
+      .setText(parts.join('   ·   '))
+      .setColor(staggerInk(preview.staggers.length, preview.incomingDamage));
   }
 
   destroy(): void {
@@ -64,4 +67,10 @@ export class PreviewReadout {
 
 function plural(turns: number): string {
   return turns === 1 ? 'turn' : 'turns';
+}
+
+/** A Stagger is the payoff moment, so it wins the line's colour (GDD §4.6). */
+function staggerInk(staggers: number, incoming: number): string {
+  if (staggers > 0) return PLAYER_INK;
+  return incoming > 0 ? ENEMY_INK : MUTED;
 }

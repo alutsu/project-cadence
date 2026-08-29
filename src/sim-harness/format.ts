@@ -39,6 +39,8 @@ export function formatEvent(event: CombatEvent): string {
       return `${at} intent ${event.actor} ${event.intent}`;
     case 'damage_dealt':
       return `${at} damage ${event.source} -> ${event.target} ${String(event.amount)}`;
+    case 'staggered':
+      return `${at} staggered ${event.actor} +${String(event.delay)}`;
     case 'actor_died':
       return `${at} died ${event.actor}`;
     case 'combat_ended':

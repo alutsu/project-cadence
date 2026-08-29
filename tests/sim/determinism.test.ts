@@ -65,34 +65,30 @@ describe('determinism (GDD §20.2, CLAUDE.md §7.2)', () => {
       't5 scheduled rat -> t9',
       't6 turn player',
       't6 no draw (draw_pile_empty)',
-      // A Heavy card costs ten ticks, and the rat takes two turns inside them.
+      // A Heavy card costs ten ticks — but 24 damage clears the rat's Poise
+      // threshold of 8, so the bite due at t9 slides to t12 (GDD §4.6).
       't6 played player crush w10',
       't6 damage player -> rat 24',
+      't6 staggered rat +3',
       // Recovery 26: gone until t32, and the strip can say so in advance.
       't6 cooldown crush -> t32',
       't6 scheduled player -> t16',
-      't9 turn rat',
-      't9 intent rat Gnaw',
-      't9 damage rat -> player 3',
-      't9 scheduled rat -> t13',
-      't13 turn rat',
-      't13 intent rat Gnaw',
-      't13 damage rat -> player 3',
-      't13 scheduled rat -> t17',
+      't12 turn rat',
+      't12 intent rat Gnaw',
+      't12 damage rat -> player 3',
+      't12 scheduled rat -> t16',
+      // Both are due at t16; the rat is faster, so it bites first (GDD §4.1).
+      't16 turn rat',
+      't16 intent rat Gnaw',
+      't16 damage rat -> player 3',
+      't16 scheduled rat -> t20',
       't16 turn player',
       't16 no draw (draw_pile_empty)',
       // Wait is Weight 3 (GDD §4.3), so the player is back before the rat.
       't16 waited player',
       't16 no draw (draw_pile_empty)',
-      // Wait's 3 Guard is 3 ticks of protection or one small hit (GDD §4.4).
       't16 guard player +3',
       't16 scheduled player -> t19',
-      't17 turn rat',
-      't17 intent rat Gnaw',
-      't17 damage rat -> player 3',
-      // One tick of decay later, 2 Guard is left, and it eats most of the bite.
-      't17 guard player absorbed 2',
-      't17 scheduled rat -> t21',
       't19 turn player',
       't19 no draw (draw_pile_empty)',
       't19 played player strike w4',
@@ -109,7 +105,7 @@ describe('determinism (GDD §20.2, CLAUDE.md §7.2)', () => {
     const { state } = play(SCRIPT);
 
     expect(state.outcome).toBe('won');
-    expect(findActor(state, PLAYER)?.hp).toBe(60);
+    expect(findActor(state, PLAYER)?.hp).toBe(61);
     expect(findActor(state, RAT)?.hp).toBe(0);
   });
 });

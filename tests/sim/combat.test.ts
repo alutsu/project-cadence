@@ -64,12 +64,18 @@ describe('Weight moves the queue (GDD §4.1, pillar P1)', () => {
     expect(step.state.now).toBe(16);
   });
 
-  it('costs only one rat action for a Light card', () => {
+  it('buys back the turn entirely when a Light card breaks Poise', () => {
     const { state } = opening();
     const step = commit(state, { kind: 'play', card: LIGHT, target: RAT });
 
+    // Strike deals 9 into the rat's Poise threshold of 8, so the bite due at t9
+    // slides to t12 and the player is back at t10 before it lands (GDD §4.6).
+    expect(step.events).toContainEqual(
+      expect.objectContaining({ kind: 'staggered', actor: RAT, delay: 3 }),
+    );
     expect(nextActTickOf(step.state, PLAYER)).toBe(10);
-    expect(turnsTakenBy(step.events, RAT)).toBe(1);
+    expect(nextActTickOf(step.state, RAT)).toBe(12);
+    expect(turnsTakenBy(step.events, RAT)).toBe(0);
   });
 
   it('reschedules Wait by its Weight of 3 (GDD §4.3)', () => {

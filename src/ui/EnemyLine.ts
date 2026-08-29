@@ -73,6 +73,20 @@ export class EnemyLine {
         .setOrigin(0.5, 0.5),
     );
 
+    // The Poise threshold is the number the player compares a card's damage to,
+    // so it is on the silhouette rather than in a tooltip (GDD §4.6, §15).
+    if (enemy.poise > 0) {
+      view.add(
+        scene.add
+          .text(0, height / 2 - 66, `POISE ${String(enemy.poise)}`, {
+            fontFamily: FONT,
+            fontSize: TYPE.slotIntent,
+            color: MUTED,
+          })
+          .setOrigin(0.5, 0.5),
+      );
+    }
+
     const condition = [
       enemy.guard > 0 ? `GUARD ${String(enemy.guard)}` : '',
       describeStatuses(enemy.statuses),

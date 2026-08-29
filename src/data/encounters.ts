@@ -17,6 +17,8 @@ const PLAYER_SEED: ActorSeed = {
   side: 'player',
   baseSpeed: 100,
   maxHp: 70,
+  // The player has no Poise: Stagger is something you do to enemies (GDD §4.6).
+  poise: 0,
   intent: null,
 };
 
@@ -26,6 +28,8 @@ const RAT_SEED: ActorSeed = {
   side: 'enemy',
   baseSpeed: 130,
   maxHp: 30,
+  // Low Poise: the rat is where a player learns that Stagger exists (GDD §12.2).
+  poise: 8,
   intent: { name: 'Gnaw', weight: tick(4), damage: 3 },
 };
 
@@ -36,6 +40,8 @@ const WARDEN_SEED: ActorSeed = {
   side: 'enemy',
   baseSpeed: 70,
   maxHp: 60,
+  // Huge Poise: only the heaviest cards interrupt the swing (GDD §12.2).
+  poise: 22,
   intent: { name: 'Ruinous Swing', weight: tick(16), damage: 18 },
 };
 
