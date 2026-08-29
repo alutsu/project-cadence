@@ -6,7 +6,7 @@
 
 **What changed from v0.1:** two math errors corrected (§7.4 Weave floor, §6.1 HP economy), five missing systems specified (defense, status timing, targeting, the Wait action, the full economy), and the production sections a solo developer actually needs added (§15–§19). Changes are flagged **[FIX]** or **[NEW]**.
 
-**Amendment 2026-08-29 (flagged [AMD]):** eight gaps and one contradiction found while planning M0 are resolved in-place — the Poise model (§4.6/§4.8/§6.2), tie-break Speed and hand overflow (§4.1), Wait's cost (§4.3), enemy Guard (§4.4), Bleed's decay (§4.5), the draw-decoupling counter (§4.7), and the provisional M0 deck (§5.1) — and the game's presentation is specified for the first time (§15.1: first-person, cards held in hand, enemies facing the camera). See `docs/M0_PLAN.md` §2. Open question 1 remains open by design and is scheduled for M0's S8.
+**Amendment 2026-08-29 (flagged [AMD]):** eight gaps and one contradiction found while planning M0 are resolved in-place — the Poise model (§4.6/§4.8/§6.2), tie-break Speed and hand overflow (§4.1), Wait's cost (§4.3), enemy Guard (§4.4), Bleed's decay (§4.5), the draw-decoupling counter and a Speed floor (§4.7), and the provisional M0 deck (§5.1) — and the game's presentation is specified for the first time (§15.1: first-person, cards held in hand, enemies facing the camera). See `docs/M0_PLAN.md` §2. Open question 1 remains open by design and is scheduled for M0's S8.
 
 ---
 
@@ -155,6 +155,8 @@ effective_speed = 100 + gain            if gain <= 40
 effective_speed = 140 + (gain - 40)/2   if gain > 40
 hard cap = 180
 ```
+
+**[AMD] Effective Speed has a floor of 20.** The formula above has no lower bound, and `delay = ceil(weight * 100 / effective_speed)` divides by it — a large enough Slow stack drives effective Speed to zero and the delay to infinity. The floor is one fifth of base: punishing, still playable, never degenerate. Discovered while implementing §4.1 in M0/S1.
 
 Additionally, **draw is decoupled from Speed above 140**: beyond that threshold, the player draws 1 card every *other* turn. Extra actions still accrue; extra cards do not. **[AMD]** "Every other turn" counts **the actor's own committed actions** — draw on even-numbered ones. The count is local to the actor and survives any reordering of the queue; there is no shared turn counter in this game and none may be introduced (P6). Speed remains excellent, but it stops being the only stat worth having.
 

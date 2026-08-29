@@ -6,6 +6,9 @@
     "moduleResolution": "bundler",
     "moduleDetection": "force",
     "isolatedModules": true,
+    // Explicit .ts specifiers keep /sim runnable by node directly, with no
+    // bundler in the loop for the headless balance harness (CLAUDE.md §7.3).
+    "allowImportingTsExtensions": true,
     "esModuleInterop": true,
     "resolveJsonModule": true,
     "skipLibCheck": true,

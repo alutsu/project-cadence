@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { join } from 'node:path';
-import { ambientTimeOrRandomUses, collectSourceFiles, loadFixture, repoRelative } from './scan';
+import { ambientTimeOrRandomUses, collectSourceFiles, loadFixture, repoRelative } from './scan.ts';
 
 const ROOT = join(import.meta.dirname, '..', '..');
 const SIM_DIR = join(ROOT, 'src', 'sim');

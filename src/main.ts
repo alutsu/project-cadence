@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { BootScene } from './scenes/BootScene';
+import { BootScene } from './scenes/BootScene.ts';
 
 // GDD §16: design at 1920x1080, scale down to 1280x720.
 const DESIGN_WIDTH = 1920;

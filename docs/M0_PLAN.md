@@ -1,6 +1,6 @@
 # M0 — Feel Test: Implementation Plan
 
-**Milestone owner:** solo · **Budget:** 4–6 weeks (GDD §18) · **Status:** not started
+**Milestone owner:** solo · **Budget:** 4–6 weeks (GDD §18) · **Status:** S0 and S1 complete
 
 **Traces to:** GDD §18 (M0 item list), §4 (all of combat), §20 (architecture), §22 Q1
 (Ultimates — scheduled for resolution here), §21 Risk 1 (fatal risk this milestone exists
@@ -64,6 +64,7 @@ The eight that are **rules** were written into the GDD in the same pass, flagged
 | D7 | **Bleed's magnitude decay** is unspecified (§4.5). | No decay; expires on duration. Poison punishes existing, Bleed punishes acting — Bleed scales with the victim's Speed, Poison deliberately does not. Built in S5, dormant in M0. | GDD §4.5 |
 | D8 | **Draw decoupling above Speed 140** (§4.7) needs a countable unit. | Count **the actor's own committed actions**; draw on even-numbered ones. Local to the actor, survives queue reordering, introduces no shared turn counter (P6). Unreachable in M0. | GDD §4.7 |
 | D9 | **How is damage computed with no Weave?** (M0-only) | **Flat**: card base value plus Empower/Weaken. Tags exist in the JSON as inert labels and multiply nothing. M0 measures the queue and nothing else; the Weave slots in at M1 as one function in the pipeline. | here |
+| D11 | **Effective Speed has no lower bound** (§4.7), but the delay formula divides by it — enough Slow means division by zero. Found while implementing S1. | Floor at **20**, one fifth of base: punishing, still playable, never degenerate. | GDD §4.7 |
 | D10 | **Who plays the gate hour?** (M0-only) | **You, then one outsider.** You play the hour and answer the six questions; then one person who has not read the GDD plays 20 minutes cold. Their confusion is the signal the author cannot generate. | here, §7 |
 
 **Open question 1 (Ultimates, §22)** is deliberately *not* resolved here — it is an M0
