@@ -4,10 +4,16 @@ import { PLAYER, RAT, WARDEN, ratAndWarden, soloRat } from '../../src/data/encou
 import { advanceToDecision, startCombat, type CombatSetup } from '../../src/sim/combat.ts';
 import { forecastQueue, QUEUE_SLOTS } from '../../src/sim/forecast.ts';
 import { cardId } from '../../src/sim/ids.ts';
+import { createRng } from '../../src/sim/rng.ts';
 import type { CombatState } from '../../src/sim/state.ts';
 
 function opened(actors: CombatSetup['actors']): CombatState {
-  const started = startCombat({ actors, catalogue: m0Catalogue(), hand: [cardId('strike')] });
+  const started = startCombat({
+    actors,
+    catalogue: m0Catalogue(),
+    deck: [cardId('strike')],
+    rng: createRng(1, 'combat'),
+  });
   return advanceToDecision(started.state).state;
 }
 

@@ -6,7 +6,7 @@
 
 **What changed from v0.1:** two math errors corrected (§7.4 Weave floor, §6.1 HP economy), five missing systems specified (defense, status timing, targeting, the Wait action, the full economy), and the production sections a solo developer actually needs added (§15–§19). Changes are flagged **[FIX]** or **[NEW]**.
 
-**Amendment 2026-08-29 (flagged [AMD]):** eight gaps and one contradiction found while planning M0 are resolved in-place — the Poise model (§4.6/§4.8/§6.2), tie-break Speed and hand overflow (§4.1), Wait's cost (§4.3), enemy Guard (§4.4), Bleed's decay (§4.5), the draw-decoupling counter and a Speed floor (§4.7), and the provisional M0 deck (§5.1) — and the game's presentation is specified for the first time (§15.1: first-person, cards held in hand, enemies facing the camera). See `docs/M0_PLAN.md` §2. Open question 1 remains open by design and is scheduled for M0's S8.
+**Amendment 2026-08-29 (flagged [AMD]):** eight gaps and one contradiction found while planning M0 are resolved in-place — the Poise model (§4.6/§4.8/§6.2), tie-break Speed and hand overflow (§4.1), Wait's cost (§4.3), enemy Guard (§4.4), Bleed's decay (§4.5), the draw-decoupling counter and a Speed floor (§4.7), the piles (§4.9: opening hand, shuffling, return timing), and the provisional M0 deck (§5.1) — and the game's presentation is specified for the first time (§15.1: first-person, cards held in hand, enemies facing the camera). See `docs/M0_PLAN.md` §2. Open question 1 remains open by design and is scheduled for M0's S8.
 
 ---
 
@@ -102,6 +102,8 @@ Hovering a card **re-renders the queue in ghost form**. This is the core UX of t
 
 The player may always **Wait**: Weight 3, draw 1, gain 3 Guard. Waiting is a real tactic — letting a key card come off Cooldown, or ducking under an enemy's wind-up so their big hit lands while you're already recovering. If the hand is empty and no card can be played, Wait is auto-selected after a 1.5s beat.
 
+**[AMD] Wait's draw is an extra one.** §3's loop already draws 1 at the start of every player turn, so Wait's "draw 1" is a second card, not a restatement of the first. The relic *Second Wind* (§10) reads "Wait draws 2 instead of 1" on the same understanding. Wait therefore trades tempo for cards, which is what makes it a tactic rather than a pass. If it proves too strong at the M0 gate, the lever is Wait's Weight, not its draw.
+
 **[AMD] Wait's cost and limits.** Wait is an action, not a card: it enters no Cooldown pile and reschedules by the standard `ceil(3 * 100 / effective_speed)`. There is **no anti-spam rule** — 3 Guard barely outruns Guard's own 1-per-tick decay, so repeated Waiting loses ground to any enemy on its own. If playtesting shows turtling, the fix is a rising Weight on consecutive Waits, not a special-case restriction.
 
 **[AMD] Drawing into a full hand** (§4.1, hand cap 6) is **skipped**: the card stays on top of the draw pile and nothing is discarded. A full hand means the draw is waiting for you — holding cards has a cost, and no card is ever silently lost.
@@ -170,6 +172,12 @@ Additionally, **draw is decoupled from Speed above 140**: beyond that threshold,
 ### 4.9 Cards and the Cooldown pile
 
 Played cards enter the **Cooldown pile** with `return_tick = now + recovery`, then return to the **bottom of the draw pile**. Empty draw pile on a draw = draw nothing (the wait is the cost; do not reshuffle early).
+
+**[AMD] The opening hand is 5.** The document never stated one, and §3's loop draws 1 at the start of each player turn — which would open an encounter holding a single card. Five leaves exactly one space under the hand cap of 6, so the first turn's draw is a real draw rather than one skipped against a full hand (§4.3 [AMD]).
+
+**[AMD] The draw pile is shuffled at encounter start**, from the seeded `combat` stream (§20.2). "Do not reshuffle early" governs the Cooldown pile mid-encounter; it does not mean the deck is played in authored order.
+
+**[AMD] Cooldown returns resolve in the scheduler**, in tick order, *before* the turn of the actor whose tick they fall on. A card whose Recovery ends exactly on your turn is therefore back in the pile in time to be drawn that turn.
 
 Deck size 12–16.
 

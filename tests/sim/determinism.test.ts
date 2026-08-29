@@ -51,15 +51,25 @@ describe('determinism (GDD §20.2, CLAUDE.md §7.2)', () => {
       't0 combat_started',
       't0 scheduled player -> t6',
       't0 scheduled rat -> t5',
+      // A three-card deck cannot fill the five-card opening hand, and the pile
+      // is never topped up early (GDD §4.9).
+      't0 drew crush',
+      't0 drew strike',
+      't0 drew cleave',
+      't0 no draw (draw_pile_empty)',
+      't0 no draw (draw_pile_empty)',
       // The rat is faster, so it opens; no coin flip (GDD §4.1).
       't5 turn rat',
       't5 intent rat Gnaw',
       't5 damage rat -> player 3',
       't5 scheduled rat -> t9',
       't6 turn player',
+      't6 no draw (draw_pile_empty)',
       // A Heavy card costs ten ticks, and the rat takes two turns inside them.
       't6 played player crush w10',
       't6 damage player -> rat 24',
+      // Recovery 26: gone until t32, and the strip can say so in advance.
+      't6 cooldown crush -> t32',
       't6 scheduled player -> t16',
       't9 turn rat',
       't9 intent rat Gnaw',
@@ -70,17 +80,21 @@ describe('determinism (GDD §20.2, CLAUDE.md §7.2)', () => {
       't13 damage rat -> player 3',
       't13 scheduled rat -> t17',
       't16 turn player',
+      't16 no draw (draw_pile_empty)',
       // Wait is Weight 3 (GDD §4.3), so the player is back before the rat.
       't16 waited player',
+      't16 no draw (draw_pile_empty)',
       't16 scheduled player -> t19',
       't17 turn rat',
       't17 intent rat Gnaw',
       't17 damage rat -> player 3',
       't17 scheduled rat -> t21',
       't19 turn player',
+      't19 no draw (draw_pile_empty)',
       't19 played player strike w4',
       't19 damage player -> rat 9',
       't19 died rat',
+      't19 cooldown strike -> t27',
       't19 scheduled player -> t23',
       // The encounter closes only after the turn that ended it has resolved.
       't19 combat_ended won',

@@ -26,10 +26,10 @@ function randomOpening(rng: Rng): CombatState {
   const enemies = roster.slice(1).filter(() => rng.nextInt(4) > 0);
   const actors: readonly ActorSeed[] = enemies.length > 0 ? [player, ...enemies] : roster;
 
-  const handSize = 1 + rng.nextInt(6);
-  const hand = Array.from({ length: handSize }, () => pick(rng, ALL_CARDS));
+  const deckSize = 1 + rng.nextInt(8);
+  const deck = Array.from({ length: deckSize }, () => pick(rng, ALL_CARDS));
 
-  return advanceToDecision(startCombat({ actors, catalogue: CATALOGUE, hand }).state).state;
+  return advanceToDecision(startCombat({ actors, catalogue: CATALOGUE, deck, rng }).state).state;
 }
 
 function legalActions(state: CombatState): readonly Action[] {
@@ -148,7 +148,12 @@ describe('ghost preview equivalence (CLAUDE.md §7.1, GDD §4.2)', () => {
 describe('what the preview tells the player (GDD §4.2, §15)', () => {
   it('counts the enemy turns bought by a Heavy card, and their cost', () => {
     const state = advanceToDecision(
-      startCombat({ actors: ratAndWarden(), catalogue: CATALOGUE, hand: [cardId('crush')] }).state,
+      startCombat({
+        actors: ratAndWarden(),
+        catalogue: CATALOGUE,
+        deck: [cardId('crush')],
+        rng: createRng(1, 'combat'),
+      }).state,
     ).state;
 
     const rat = ratAndWarden()[1]?.id;
@@ -165,7 +170,12 @@ describe('what the preview tells the player (GDD §4.2, §15)', () => {
 
   it('counts an enemy that shares the player tick but wins the tie-break', () => {
     const state = advanceToDecision(
-      startCombat({ actors: ratAndWarden(), catalogue: CATALOGUE, hand: [cardId('crush')] }).state,
+      startCombat({
+        actors: ratAndWarden(),
+        catalogue: CATALOGUE,
+        deck: [cardId('crush')],
+        rng: createRng(1, 'combat'),
+      }).state,
     ).state;
 
     const waiting = previewAction(state, { kind: 'wait' });

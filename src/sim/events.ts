@@ -24,6 +24,19 @@ export type CombatEvent =
       readonly weight: Tick;
     }
   | { readonly kind: 'waited'; readonly at: Tick; readonly actor: ActorId }
+  | { readonly kind: 'card_drawn'; readonly at: Tick; readonly card: CardId }
+  | {
+      readonly kind: 'draw_skipped';
+      readonly at: Tick;
+      readonly reason: 'hand_full' | 'draw_pile_empty';
+    }
+  | {
+      readonly kind: 'card_cooled';
+      readonly at: Tick;
+      readonly card: CardId;
+      readonly returnTick: Tick;
+    }
+  | { readonly kind: 'card_returned'; readonly at: Tick; readonly card: CardId }
   | {
       readonly kind: 'intent_executed';
       readonly at: Tick;

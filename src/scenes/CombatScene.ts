@@ -7,10 +7,13 @@ import type { CardDefinition } from '../sim/card.ts';
 import { advanceToDecision, reduce, startCombat } from '../sim/combat.ts';
 import { previewAction } from '../sim/forecast.ts';
 import { cardId, type ActorId } from '../sim/ids.ts';
+import { createRng } from '../sim/rng.ts';
+import { hasPlayableCard } from '../sim/piles.ts';
 import { findActor, type CombatState } from '../sim/state.ts';
 import { ActionBar } from '../ui/ActionBar.ts';
 import { EnemyLine } from '../ui/EnemyLine.ts';
 import { Hand } from '../ui/Hand.ts';
+import { PilesPanel } from '../ui/PilesPanel.ts';
 import { PreviewReadout } from '../ui/PreviewReadout.ts';
 import { QueueStrip } from '../ui/QueueStrip.ts';
 import { COLORS } from '../ui/theme.ts';
@@ -21,6 +24,7 @@ interface CombatViews {
   readonly hand: Hand;
   readonly bar: ActionBar;
   readonly readout: PreviewReadout;
+  readonly piles: PilesPanel;
 }
 
 /**
@@ -34,6 +38,7 @@ export class CombatScene extends Phaser.Scene {
   private state: CombatState = openingState();
   private target: ActorId | null = null;
   private views: CombatViews | null = null;
+  private autoWait: Phaser.Time.TimerEvent | null = null;
 
   constructor() {
     super('Combat');
@@ -70,6 +75,7 @@ export class CombatScene extends Phaser.Scene {
         },
       }),
       readout: new PreviewReadout(this),
+      piles: new PilesPanel(this),
     };
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
@@ -159,6 +165,28 @@ export class CombatScene extends Phaser.Scene {
     views.hand.render(this.state);
     views.bar.render(this.state);
     views.readout.render('', null);
+    views.piles.render(this.state);
+    this.armAutoWait();
+  }
+
+  /**
+   * GDD §4.3: with no card that can be played, Wait is taken for the player
+   * after a beat. The pause is deliberate — it reads as the character hesitating
+   * rather than as the game skipping the turn.
+   */
+  private armAutoWait(): void {
+    this.autoWait?.remove();
+    this.autoWait = null;
+
+    const idle =
+      this.state.outcome === 'ongoing' &&
+      this.state.activeActorId !== null &&
+      !hasPlayableCard(this.state.hand, this.state.catalogue);
+    if (!idle) return;
+
+    this.autoWait = this.time.delayedCall(AUTO_WAIT_DELAY_MS, () => {
+      this.commit({ kind: 'wait' });
+    });
   }
 
   private teardown(): void {
@@ -170,18 +198,24 @@ export class CombatScene extends Phaser.Scene {
     views.hand.destroy();
     views.bar.destroy();
     views.readout.destroy();
+    views.piles.destroy();
+    this.autoWait?.remove();
+    this.autoWait = null;
     this.views = null;
   }
 }
 
-/** The M0 hand: six cards, fixed. The piles that would refill it arrive in S4. */
-const M0_HAND = ['strike', 'lunge', 'cleave', 'hammerfall', 'crush', 'cataclysm'].map(cardId);
+/** GDD §4.3: the beat before Wait is taken for the player. */
+const AUTO_WAIT_DELAY_MS = 1500;
 
 function openingState(): CombatState {
+  const catalogue = m0Catalogue();
   const started = startCombat({
     actors: ratAndWarden(),
-    catalogue: m0Catalogue(),
-    hand: M0_HAND,
+    catalogue,
+    deck: Object.keys(catalogue).map(cardId),
+    // M0 has no run seed yet; the map and gem streams arrive with the run layer.
+    rng: createRng(Date.now(), 'combat'),
   });
   return advanceToDecision(started.state).state;
 }

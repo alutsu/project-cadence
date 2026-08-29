@@ -1,6 +1,6 @@
 # M0 — Feel Test: Implementation Plan
 
-**Milestone owner:** solo · **Budget:** 4–6 weeks (GDD §18) · **Status:** S0–S3 complete — the M0 thesis is testable
+**Milestone owner:** solo · **Budget:** 4–6 weeks (GDD §18) · **Status:** S0–S4 complete — the M0 thesis is testable
 
 **Traces to:** GDD §18 (M0 item list), §4 (all of combat), §20 (architecture), §22 Q1
 (Ultimates — scheduled for resolution here), §21 Risk 1 (fatal risk this milestone exists
@@ -65,6 +65,9 @@ The eight that are **rules** were written into the GDD in the same pass, flagged
 | D8 | **Draw decoupling above Speed 140** (§4.7) needs a countable unit. | Count **the actor's own committed actions**; draw on even-numbered ones. Local to the actor, survives queue reordering, introduces no shared turn counter (P6). Unreachable in M0. | GDD §4.7 |
 | D9 | **How is damage computed with no Weave?** (M0-only) | **Flat**: card base value plus Empower/Weaken. Tags exist in the JSON as inert labels and multiply nothing. M0 measures the queue and nothing else; the Weave slots in at M1 as one function in the pipeline. | here |
 | D11 | **Effective Speed has no lower bound** (§4.7), but the delay formula divides by it — enough Slow means division by zero. Found while implementing S1. | Floor at **20**, one fifth of base: punishing, still playable, never degenerate. | GDD §4.7 |
+| D12 | **No opening hand size** (§4.9). §3 draws 1 per turn, which opens an encounter holding one card. | **Five** — one under the hand cap, so the first turn's draw is a real draw and not one skipped against a full hand. | GDD §4.9 |
+| D13 | **Is Wait's draw the turn draw, or an extra?** (§4.3 vs §3). | **Extra.** The relic *Second Wind* ("Wait draws 2 instead of 1", §10) reads on the same understanding. Wait trades tempo for cards. If too strong at the gate, the lever is its Weight. | GDD §4.3 |
+| D14 | **Is the deck shuffled at encounter start?** (§4.9 forbids reshuffling but is silent on the initial order.) | **Yes**, from the seeded `combat` stream. The no-reshuffle rule governs the Cooldown pile mid-encounter, not the initial deal. | GDD §4.9 |
 | D10 | **Who plays the gate hour?** (M0-only) | **You, then one outsider.** You play the hour and answer the six questions; then one person who has not read the GDD plays 20 minutes cold. Their confusion is the signal the author cannot generate. | here, §7 |
 
 **Open question 1 (Ultimates, §22)** is deliberately *not* resolved here — it is an M0

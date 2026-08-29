@@ -5,6 +5,12 @@ import type { Tick } from './tick.ts';
 
 export type CombatOutcome = 'ongoing' | 'won' | 'lost';
 
+/** A played card, waiting out its Recovery (GDD §4.9). */
+export interface CooldownEntry {
+  readonly card: CardId;
+  readonly returnTick: Tick;
+}
+
 /**
  * A plain, serializable value (CLAUDE.md §2.2): no class instances, no
  * functions, no Map or Set. The reducer returns new states; nothing mutates one.
@@ -13,8 +19,11 @@ export interface CombatState {
   readonly now: Tick;
   readonly actors: readonly Actor[];
   readonly catalogue: CardCatalogue;
-  /** S4 replaces this with the full draw / hand / Cooldown piles (GDD §4.9). */
+  /** The draw pile, top first. Never reshuffled mid-encounter (GDD §4.9). */
+  readonly draw: readonly CardId[];
   readonly hand: readonly CardId[];
+  /** Played cards, each due back at its own tick (GDD §4.9). */
+  readonly cooldown: readonly CooldownEntry[];
   /** Whose turn it is, or null while time is still advancing. */
   readonly activeActorId: ActorId | null;
   readonly outcome: CombatOutcome;

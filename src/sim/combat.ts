@@ -2,9 +2,11 @@ import type { Action, IllegalAction } from './actions.ts';
 import { WAIT_WEIGHT } from './actions.ts';
 import { actorSpeed, isAlive, type Actor, type Intent } from './actor.ts';
 import { findCard, type CardCatalogue } from './card.ts';
+import { OPENING_HAND, drawOne, returnDueCards, sendToCooldown, shuffle } from './piles.ts';
+import type { Rng } from './rng.ts';
 import type { CombatEvent } from './events.ts';
 import type { ActorId, CardId } from './ids.ts';
-import { actionDelay, combatSeedTick, effectiveSpeed } from './speed.ts';
+import { actionDelay, combatSeedTick, drawsOnAction, effectiveSpeed } from './speed.ts';
 import { nextToAct } from './timeline.ts';
 import {
   findActor,
@@ -42,7 +44,9 @@ export interface ActorSeed {
 export interface CombatSetup {
   readonly actors: readonly ActorSeed[];
   readonly catalogue: CardCatalogue;
-  readonly hand: readonly CardId[];
+  /** The player's deck. Shuffled at combat start from the injected stream. */
+  readonly deck: readonly CardId[];
+  readonly rng: Rng;
 }
 
 interface DamageOrder {
@@ -58,7 +62,9 @@ export function startCombat(setup: CombatSetup): CombatStep {
     now: TICK_ZERO,
     actors,
     catalogue: setup.catalogue,
-    hand: setup.hand,
+    draw: shuffle(setup.deck, setup.rng),
+    hand: [],
+    cooldown: [],
     activeActorId: null,
     outcome: 'ongoing',
   };
@@ -73,7 +79,16 @@ export function startCombat(setup: CombatSetup): CombatStep {
     })),
   ];
 
-  return { state, events };
+  return dealOpeningHand({ state, events });
+}
+
+function dealOpeningHand(start: CombatStep): CombatStep {
+  let step = start;
+  for (let dealt = 0; dealt < OPENING_HAND; dealt += 1) {
+    const drawn = drawOne(step.state);
+    step = { state: drawn.state, events: [...step.events, ...drawn.events] };
+  }
+  return step;
 }
 
 const NO_SPEED_GAIN = 0;
@@ -189,12 +204,15 @@ export function advanceToDecision(state: CombatState): CombatStep {
     const next = nextToAct(current.actors);
     if (next === null) return { state: current, events };
 
+    // Tick-scheduled effects resolve between turns (GDD §3), so a card whose
+    // Recovery ends exactly on your turn is back in the pile before you draw.
+    const returned = returnDueCards(current, next.nextActTick);
+    current = returned.state;
+    events.push(...returned.events);
+
     if (next.side === 'player') {
-      const at = next.nextActTick;
-      return {
-        state: { ...current, now: at, activeActorId: next.id },
-        events: [...events, { kind: 'turn_started', at, actor: next.id }],
-      };
+      const opened = openPlayerTurn(current, next);
+      return { state: opened.state, events: [...events, ...opened.events] };
     }
 
     const step = resolveEnemyTurn(current, next);
@@ -213,6 +231,24 @@ function scheduledEvent(state: CombatState, actor: ActorId, at: Tick): CombatEve
   if (rescheduled === undefined)
     throw new Error(`rescheduled actor is missing from state: ${actor}`);
   return { kind: 'actor_scheduled', at, actor, nextActTick: rescheduled.nextActTick };
+}
+
+/**
+ * The player's turn opens with a draw (GDD §3). Above the Speed soft cap that
+ * draw comes every other action instead — extra actions accrue, extra cards do
+ * not (GDD §4.7).
+ */
+function openPlayerTurn(state: CombatState, player: Actor): CombatStep {
+  const at = player.nextActTick;
+  const opened: CombatState = { ...state, now: at, activeActorId: player.id };
+  const events: CombatEvent[] = [{ kind: 'turn_started', at, actor: player.id }];
+
+  if (!drawsOnAction(actorSpeed(player), player.actionsCommitted)) {
+    return { state: opened, events };
+  }
+
+  const drawn = drawOne(opened);
+  return { state: drawn.state, events: [...events, ...drawn.events] };
 }
 
 /** Commits the acting player's choice. Illegal actions are refused here. */
@@ -243,9 +279,12 @@ function activePlayer(state: CombatState): Actor | null {
  */
 function commitWait(state: CombatState, actor: Actor): CombatStep {
   const at = state.now;
-  const acted = withActor(state, reschedule(actor, at, WAIT_WEIGHT));
+  const drawn = drawOne(state);
+  const acted = withActor(drawn.state, reschedule(actor, at, WAIT_WEIGHT));
+
   return settleOutcome({ ...acted, activeActorId: null }, [
     { kind: 'waited', at, actor: actor.id },
+    ...drawn.events,
     scheduledEvent(acted, actor.id, at),
   ]);
 }
@@ -270,13 +309,15 @@ function commitPlay(
 
   const at = state.now;
   const struck = applyDamage(state, { source: actor.id, target: target.id, amount: card.damage });
-  const acted = withActor(struck.state, reschedule(actor, at, card.weight));
+  const cooled = sendToCooldown(struck.state, card.id);
+  const acted = withActor(cooled.state, reschedule(actor, at, card.weight));
 
   return {
     ok: true,
     step: settleOutcome({ ...acted, activeActorId: null }, [
       { kind: 'card_played', at, actor: actor.id, card: card.id, weight: card.weight },
       ...struck.events,
+      ...cooled.events,
       scheduledEvent(acted, actor.id, at),
     ]),
   };

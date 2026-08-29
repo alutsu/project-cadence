@@ -17,6 +17,14 @@ export function formatEvent(event: CombatEvent): string {
       return `${at} played ${event.actor} ${event.card} w${String(event.weight)}`;
     case 'waited':
       return `${at} waited ${event.actor}`;
+    case 'card_drawn':
+      return `${at} drew ${event.card}`;
+    case 'draw_skipped':
+      return `${at} no draw (${event.reason})`;
+    case 'card_cooled':
+      return `${at} cooldown ${event.card} -> t${String(event.returnTick)}`;
+    case 'card_returned':
+      return `${at} returned ${event.card}`;
     case 'intent_executed':
       return `${at} intent ${event.actor} ${event.intent}`;
     case 'damage_dealt':

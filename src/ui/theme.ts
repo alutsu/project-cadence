@@ -50,5 +50,6 @@ export const LAYOUT = {
    * (P5), so `tiltDegrees` stays 0 until the WebGL path is understood.
    */
   hand: { baselineY: 850, cardWidth: 190, cardHeight: 250, gap: 30, tiltDegrees: 0, lift: 22 },
+  piles: { top: 380 },
   hud: { margin: 48 },
 } as const;
