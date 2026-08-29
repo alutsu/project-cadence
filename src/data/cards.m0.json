@@ -1,0 +1,29 @@
+{
+  "_comment": "Provisional M0 deck (GDD §5.1 [AMD], docs/M0_PLAN.md D1). Not a design commitment: whatever survives the M0 gate is promoted into the GDD as the real skill table. Weight and Recovery are inherited from the class table in GDD §4.1 — a card never states them itself.",
+  "cards": [
+    { "id": "strike", "name": "Strike", "class": "light", "damage": 9, "tags": ["Physical"] },
+    { "id": "lunge", "name": "Lunge", "class": "light", "damage": 11, "tags": ["Physical"] },
+    { "id": "feint", "name": "Feint", "class": "light", "damage": 6, "tags": ["Physical"] },
+    { "id": "dart", "name": "Dart", "class": "light", "damage": 8, "tags": ["Physical"] },
+    { "id": "riposte", "name": "Riposte", "class": "light", "damage": 10, "tags": ["Physical"] },
+    { "id": "cleave", "name": "Cleave", "class": "standard", "damage": 14, "tags": ["Physical"] },
+    { "id": "pin", "name": "Pin", "class": "standard", "damage": 13, "tags": ["Physical"] },
+    {
+      "id": "hammerfall",
+      "name": "Hammerfall",
+      "class": "standard",
+      "damage": 16,
+      "tags": ["Physical"]
+    },
+    { "id": "sweep", "name": "Sweep", "class": "standard", "damage": 12, "tags": ["Physical"] },
+    { "id": "crush", "name": "Crush", "class": "heavy", "damage": 24, "tags": ["Physical"] },
+    { "id": "sunder", "name": "Sunder", "class": "heavy", "damage": 22, "tags": ["Physical"] },
+    {
+      "id": "cataclysm",
+      "name": "Cataclysm",
+      "class": "ultimate",
+      "damage": 44,
+      "tags": ["Physical"]
+    }
+  ]
+}

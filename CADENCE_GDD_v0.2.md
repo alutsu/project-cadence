@@ -487,6 +487,8 @@ This is a presentation decision, not a new system, and it is chosen for three re
 - It puts the hand where the attention is. The player's two loops are *read the queue*
   and *choose a card*; holding the cards in frame makes the second one physical.
 
+**[AMD] Cards fan on an arc, not by rotation.** The hand curves — outer cards sit lower, as if held — but the cards themselves stay upright. Phaser 4.2.1's WebGL renderer corrupts glyphs inside rotated containers, and it corrupts them on exactly the Weight and damage numbers §15 says must be unmissable. Legibility outranks the flourish (P5). Revisit if the engine issue is resolved.
+
 **Visual budget.** Flat colour, glyphs, and text. Enemies are silhouettes with an intent
 badge. No environment art, no particle systems beyond a hit flash, no camera movement
 except a Stagger nudge (§4.6) — that one moment is the game's payoff and earns its

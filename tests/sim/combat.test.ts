@@ -5,7 +5,8 @@ import type { CombatEvent } from '../../src/sim/events.ts';
 import type { ActorId } from '../../src/sim/ids.ts';
 import { cardId } from '../../src/sim/ids.ts';
 import { findActor, type CombatState } from '../../src/sim/state.ts';
-import { CATALOGUE, HEAVY, LIGHT, PLAYER, RAT, scenario } from '../../src/sim-harness/scenario.ts';
+import { m0Catalogue } from '../../src/data/cards.ts';
+import { HEAVY, LIGHT, PLAYER, RAT, scenario } from '../../src/sim-harness/scenario.ts';
 
 /** Starts the scenario and runs time forward to the first player decision. */
 function opening(): CombatStep {
@@ -152,6 +153,6 @@ describe('encounter end (GDD §4.10)', () => {
     const { state } = opening();
     commit(state, { kind: 'play', card: HEAVY, target: RAT });
 
-    expect(state.catalogue).toEqual(CATALOGUE);
+    expect(state.catalogue).toEqual(m0Catalogue());
   });
 });
