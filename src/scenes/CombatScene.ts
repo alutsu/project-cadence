@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { m0Catalogue } from '../data/cards.ts';
-import { ENCOUNTERS } from '../data/encounters.ts';
+import { ENCOUNTERS, PLAYER } from '../data/encounters.ts';
 import type { Action } from '../sim/actions.ts';
 import { isAlive } from '../sim/actor.ts';
 import type { CardDefinition } from '../sim/card.ts';
@@ -8,6 +8,8 @@ import { advanceToDecision, reduce, startCombat } from '../sim/combat.ts';
 import { previewAction } from '../sim/forecast.ts';
 import { cardId, type ActorId } from '../sim/ids.ts';
 import { createRng } from '../sim/rng.ts';
+import { DEFAULT_RULES, ULTIMATE_RULES, type CombatRules } from '../sim/rules.ts';
+import { tick } from '../sim/tick.ts';
 import { hasPlayableCard } from '../sim/piles.ts';
 import { findActor, type CombatState } from '../sim/state.ts';
 import { ActionBar } from '../ui/ActionBar.ts';
@@ -16,6 +18,8 @@ import { EnemyLine } from '../ui/EnemyLine.ts';
 import { Hand } from '../ui/Hand.ts';
 import { PilesPanel } from '../ui/PilesPanel.ts';
 import { PreviewReadout } from '../ui/PreviewReadout.ts';
+import { SessionLog } from '../ui/SessionLog.ts';
+import { TuningPanel } from '../ui/TuningPanel.ts';
 import { QueueStrip } from '../ui/QueueStrip.ts';
 import { COLORS } from '../ui/theme.ts';
 
@@ -27,6 +31,7 @@ interface CombatViews {
   readonly readout: PreviewReadout;
   readonly piles: PilesPanel;
   readonly banner: EncounterBanner;
+  readonly tuning: TuningPanel;
 }
 
 /**
@@ -38,7 +43,10 @@ interface CombatViews {
  */
 export class CombatScene extends Phaser.Scene {
   private encounterIndex = 0;
-  private state: CombatState = openingState(0);
+  private rules: CombatRules = DEFAULT_RULES;
+  private animations = true;
+  private readonly session = new SessionLog();
+  private state: CombatState = openingState(0, DEFAULT_RULES);
   private target: ActorId | null = null;
   private views: CombatViews | null = null;
   private autoWait: Phaser.Time.TimerEvent | null = null;
@@ -80,7 +88,10 @@ export class CombatScene extends Phaser.Scene {
       readout: new PreviewReadout(this),
       piles: new PilesPanel(this),
       banner: new EncounterBanner(this),
+      tuning: new TuningPanel(this),
     };
+
+    this.installTuningKeys();
 
     // Once an encounter is over the cards are inert, so a click anywhere is
     // unambiguous: it means "next".
@@ -137,7 +148,65 @@ export class CombatScene extends Phaser.Scene {
     if (this.state.outcome === 'ongoing') return;
 
     this.encounterIndex = (this.encounterIndex + 1) % ENCOUNTERS.length;
-    this.state = openingState(this.encounterIndex);
+    this.restart();
+  }
+
+  /**
+   * The feel pass needs the numbers GDD §22 calls guesses to move while playing,
+   * not between builds. Every change restarts the encounter, because rules live
+   * in state and a half-changed encounter would not be a fair reading.
+   */
+  private installTuningKeys(): void {
+    const keys = this.input.keyboard;
+    if (keys === null) return;
+
+    keys.on('keydown-T', () => {
+      this.views?.tuning.toggle();
+      this.renderAll();
+    });
+    keys.on('keydown-U', () => {
+      this.cycleUltimateRule();
+    });
+    keys.on('keydown-G', () => {
+      this.retune({ guardCap: Math.max(5, this.rules.guardCap - 5) });
+    });
+    keys.on('keydown-H', () => {
+      this.retune({ guardCap: this.rules.guardCap + 5 });
+    });
+    keys.on('keydown-J', () => {
+      this.retune({ guardDecayPerTick: Math.max(0, this.rules.guardDecayPerTick - 1) });
+    });
+    keys.on('keydown-K', () => {
+      this.retune({ guardDecayPerTick: this.rules.guardDecayPerTick + 1 });
+    });
+    keys.on('keydown-W', () => {
+      this.retune({ waitWeight: tick(this.rules.waitWeight >= 6 ? 2 : this.rules.waitWeight + 1) });
+    });
+    keys.on('keydown-A', () => {
+      this.animations = !this.animations;
+      this.renderAll();
+    });
+    keys.on('keydown-R', () => {
+      this.restart();
+    });
+    keys.on('keydown-N', () => {
+      this.encounterIndex = (this.encounterIndex + 1) % ENCOUNTERS.length;
+      this.restart();
+    });
+  }
+
+  private cycleUltimateRule(): void {
+    const at = ULTIMATE_RULES.indexOf(this.rules.ultimate);
+    this.retune({ ultimate: ULTIMATE_RULES[(at + 1) % ULTIMATE_RULES.length] ?? 'immediate' });
+  }
+
+  private retune(change: Partial<CombatRules>): void {
+    this.rules = { ...this.rules, ...change };
+    this.restart();
+  }
+
+  private restart(): void {
+    this.state = openingState(this.encounterIndex, this.rules);
     this.target = firstLivingEnemy(this.state);
     this.renderAll();
   }
@@ -162,11 +231,18 @@ export class CombatScene extends Phaser.Scene {
     if (!result.ok) return;
 
     const advanced = advanceToDecision(result.step.state);
+    const events = [...result.step.events, ...advanced.events];
+    const wasOngoing = this.state.outcome === 'ongoing';
+
     this.state = advanced.state;
     this.target = this.currentTarget();
+    this.session.record(events, PLAYER);
+    if (wasOngoing && this.state.outcome !== 'ongoing') this.session.encounterFinished();
     this.renderAll();
 
-    for (const event of [...result.step.events, ...advanced.events]) {
+    // Animations never change a result — they only show one (GDD §15).
+    if (!this.animations) return;
+    for (const event of events) {
       if (event.kind === 'staggered') this.views?.queue.flashStagger(event.actor, event.delay);
     }
   }
@@ -193,11 +269,10 @@ export class CombatScene extends Phaser.Scene {
     views.piles.render(this.state);
     views.banner.render(
       encounterAt(this.encounterIndex).name,
-      encounterAt(this.encounterIndex).teaches,
-      this.state.outcome === 'ongoing'
-        ? ''
-        : `${outcomeWord(this.state.outcome)} — click to continue`,
+      `${encounterAt(this.encounterIndex).teaches}   ·   seed ${String(SESSION_SEED)}`,
+      this.state.outcome === 'ongoing' ? '' : this.endOfEncounterSummary(),
     );
+    views.tuning.render(this.rules, this.animations);
     this.armAutoWait();
   }
 
@@ -221,6 +296,23 @@ export class CombatScene extends Phaser.Scene {
     });
   }
 
+  /** What the gate's questions need, counted rather than remembered (§7). */
+  private endOfEncounterSummary(): string {
+    const totals = this.session.totals(Object.keys(this.state.catalogue).map(cardId));
+    const played = `${String(totals.cardsPlayed)} cards · ${String(totals.waits)} waits`;
+    const fought = `${String(totals.staggers)} staggers · ${String(totals.damageTaken)} taken`;
+    const unplayed =
+      totals.neverPlayed.length === 0
+        ? 'every card played'
+        : `never played: ${totals.neverPlayed.join(', ')}`;
+
+    return [
+      `${outcomeWord(this.state.outcome)} — click to continue`,
+      `${played} · ${fought}`,
+      unplayed,
+    ].join('\n');
+  }
+
   private teardown(): void {
     const views = this.views;
     if (views === null) return;
@@ -232,7 +324,9 @@ export class CombatScene extends Phaser.Scene {
     views.readout.destroy();
     views.piles.destroy();
     views.banner.destroy();
+    views.tuning.destroy();
     this.input.removeAllListeners();
+    this.input.keyboard?.removeAllListeners();
     this.autoWait?.remove();
     this.autoWait = null;
     this.views = null;
@@ -252,14 +346,28 @@ function outcomeWord(outcome: CombatState['outcome']): string {
   return outcome === 'won' ? 'cleared' : 'you died';
 }
 
-function openingState(index: number): CombatState {
+/**
+ * The session seed. Taken from `?seed=` when present so a fight can be replayed
+ * exactly — GDD §13 wants that for run summaries, and the M0 gate wants it so a
+ * tester can report the hand they were looking at.
+ */
+const SESSION_SEED = readSeed();
+
+function readSeed(): number {
+  const requested = new URLSearchParams(window.location.search).get('seed');
+  const parsed = requested === null ? Number.NaN : Number(requested);
+  return Number.isFinite(parsed) ? parsed : Date.now();
+}
+
+function openingState(index: number, rules: CombatRules): CombatState {
   const catalogue = m0Catalogue();
   const started = startCombat({
     actors: encounterAt(index).actors,
     catalogue,
     deck: Object.keys(catalogue).map(cardId),
-    // M0 has no run seed yet; the map and gem streams arrive with the run layer.
-    rng: createRng(Date.now(), 'combat'),
+    // One stream in M0; the map and gem streams arrive with the run layer.
+    rng: createRng(SESSION_SEED + index, 'combat'),
+    rules,
   });
   return advanceToDecision(started.state).state;
 }

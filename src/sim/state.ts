@@ -1,5 +1,6 @@
 import type { Actor } from './actor.ts';
 import type { CardCatalogue } from './card.ts';
+import type { CombatRules } from './rules.ts';
 import type { ActorId, CardId } from './ids.ts';
 import type { Tick } from './tick.ts';
 
@@ -15,8 +16,21 @@ export interface CooldownEntry {
  * A plain, serializable value (CLAUDE.md §2.2): no class instances, no
  * functions, no Map or Set. The reducer returns new states; nothing mutates one.
  */
+/** An Ultimate in flight under the wind-up rule (GDD §22 Q1). */
+export interface PendingStrike {
+  readonly card: CardId;
+  readonly name: string;
+  readonly source: ActorId;
+  readonly target: ActorId;
+  readonly amount: number;
+  readonly landsAt: Tick;
+}
+
 export interface CombatState {
   readonly now: Tick;
+  readonly rules: CombatRules;
+  /** Strikes that have been committed but have not landed yet. */
+  readonly pending: readonly PendingStrike[];
   readonly actors: readonly Actor[];
   readonly catalogue: CardCatalogue;
   /** The draw pile, top first. Never reshuffled mid-encounter (GDD §4.9). */

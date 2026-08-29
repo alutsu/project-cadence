@@ -5,7 +5,7 @@ import type { ActorId } from './ids.ts';
 import { actionDelay } from './speed.ts';
 import { findActor, type CombatState } from './state.ts';
 import { nextToAct } from './timeline.ts';
-import { addTicks, type Tick } from './tick.ts';
+import { addTicks, tick, type Tick } from './tick.ts';
 import { actorSpeed, currentIntent, isAlive, nextIntentIndex } from './actor.ts';
 
 /** GDD §4.2: the next eight turn slots render as a strip at the top of combat. */
@@ -14,6 +14,8 @@ export const QUEUE_SLOTS = 8;
 export interface QueueSlot {
   readonly actor: ActorId;
   readonly at: Tick;
+  /** A scheduled turn, or an Ultimate in flight arriving (GDD §22 Q1). */
+  readonly kind: 'turn' | 'strike';
   /**
    * What the actor will do in *this* slot. Carried on the slot rather than read
    * off the actor, because a rotation means slot six is not slot one's intent.
@@ -42,14 +44,47 @@ export function forecastQueue(
     const acting = nextToAct(pool);
     if (acting === null) break;
 
-    forecast.push({ actor: acting.id, at: acting.nextActTick, intent: currentIntent(acting) });
+    forecast.push({
+      actor: acting.id,
+      at: acting.nextActTick,
+      kind: 'turn',
+      intent: currentIntent(acting),
+    });
     pool = pool.filter((actor) => actor.id !== acting.id);
 
     const projected = projectNextTurn(acting);
     if (projected !== null) pool = [...pool, projected];
   }
 
-  return forecast;
+  return mergePending(forecast, state, slots);
+}
+
+/**
+ * A committed Ultimate takes a slot of its own, because the whole point of the
+ * wind-up rule is that the queue shows it coming (GDD §22 Q1).
+ */
+function mergePending(
+  turns: readonly QueueSlot[],
+  state: CombatState,
+  slots: number,
+): readonly QueueSlot[] {
+  if (state.pending.length === 0) return turns;
+
+  const strikes: QueueSlot[] = state.pending.map((strike) => ({
+    actor: strike.source,
+    at: strike.landsAt,
+    kind: 'strike',
+    intent: { name: strike.name, weight: tick(0), damage: strike.amount, applies: null },
+  }));
+
+  // Effects resolve before turns at the same tick, so a strike sorts first.
+  return [...turns, ...strikes]
+    .sort((left, right) => left.at - right.at || rank(left) - rank(right))
+    .slice(0, slots);
+}
+
+function rank(slot: QueueSlot): number {
+  return slot.kind === 'strike' ? 0 : 1;
 }
 
 /** An actor's next scheduled turn, or null when it cannot honestly be known. */

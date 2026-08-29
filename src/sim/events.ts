@@ -89,5 +89,13 @@ export type CombatEvent =
       readonly actor: ActorId;
       readonly delay: Tick;
     }
+  | {
+      readonly kind: 'strike_committed';
+      readonly at: Tick;
+      readonly actor: ActorId;
+      readonly card: CardId;
+      readonly landsAt: Tick;
+    }
+  | { readonly kind: 'strike_landed'; readonly at: Tick; readonly card: CardId }
   | { readonly kind: 'actor_died'; readonly at: Tick; readonly actor: ActorId }
   | { readonly kind: 'combat_ended'; readonly at: Tick; readonly outcome: 'won' | 'lost' };

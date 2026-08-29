@@ -1,5 +1,4 @@
 import type { Action, IllegalAction } from './actions.ts';
-import { WAIT_GUARD, WAIT_WEIGHT } from './actions.ts';
 import {
   actorSpeed,
   currentIntent,
@@ -9,15 +8,16 @@ import {
   type Intent,
   type StatusApplication,
 } from './actor.ts';
-import { findCard, type CardCatalogue } from './card.ts';
+import { findCard, type CardCatalogue, type CardDefinition } from './card.ts';
 import { advanceTime } from './effects.ts';
 import { absorb, gainGuard } from './guard.ts';
 import { OPENING_HAND, drawOne, sendToCooldown, shuffle } from './piles.ts';
 import { breaksPoise, stagger } from './poise.ts';
 import type { Rng } from './rng.ts';
+import { DEFAULT_RULES, WINDUP_COMMIT_WEIGHT, type CombatRules } from './rules.ts';
 import type { CombatEvent } from './events.ts';
 import type { ActorId, CardId } from './ids.ts';
-import { actionDelay, combatSeedTick, drawsOnAction, effectiveSpeed } from './speed.ts';
+import { BASE_SPEED, actionDelay, combatSeedTick, drawsOnAction, effectiveSpeed } from './speed.ts';
 import { nextToAct } from './timeline.ts';
 import {
   findActor,
@@ -25,6 +25,7 @@ import {
   withActor,
   type CombatOutcome,
   type CombatState,
+  type PendingStrike,
 } from './state.ts';
 import { POISON_INTERVAL, damageScale, isPeriodic, magnitudeOf, type Status } from './status.ts';
 import { addTicks, TICK_ZERO, tick, type Tick } from './tick.ts';
@@ -61,6 +62,8 @@ export interface CombatSetup {
   /** The player's deck. Shuffled at combat start from the injected stream. */
   readonly deck: readonly CardId[];
   readonly rng: Rng;
+  /** Tuning knobs for the M0 feel pass; defaults when omitted. */
+  readonly rules?: CombatRules;
 }
 
 interface DamageOrder {
@@ -74,6 +77,8 @@ export function startCombat(setup: CombatSetup): CombatStep {
   const actors = setup.actors.map((seed, index) => seedActor(seed, index));
   const state: CombatState = {
     now: TICK_ZERO,
+    rules: setup.rules ?? DEFAULT_RULES,
+    pending: [],
     actors,
     catalogue: setup.catalogue,
     draw: shuffle(setup.deck, setup.rng),
@@ -129,11 +134,72 @@ function seedActor(seed: ActorSeed, index: number): Actor {
 }
 
 /** Reschedules an actor by an action's Weight (GDD §4.1). */
-function reschedule(actor: Actor, from: Tick, weight: Tick): Actor {
+function reschedule(actor: Actor, from: Tick, cost: ActionCost): Actor {
+  const delay = actionDelay(cost.weight, actorSpeed(actor));
   return {
     ...actor,
-    nextActTick: addTicks(from, actionDelay(weight, actorSpeed(actor))),
+    nextActTick: addTicks(from, tick(Math.max(1, delay - (cost.refund ?? 0)))),
     actionsCommitted: actor.actionsCommitted + 1,
+  };
+}
+
+interface ActionCost {
+  readonly weight: Tick;
+  /** Ticks handed back, for the Ultimate refund rule (GDD §22 Q1). */
+  readonly refund?: number;
+}
+
+function usesWindup(state: CombatState, card: CardDefinition): boolean {
+  return state.rules.ultimate === 'windup' && card.weightClass === 'ultimate';
+}
+
+/**
+ * GDD §22 Q1, candidate (c): half the Weight comes back if the Ultimate kills.
+ * A finisher rather than an opener.
+ */
+function refundOnKill(
+  state: CombatState,
+  card: CardDefinition,
+  events: readonly CombatEvent[],
+): number {
+  if (state.rules.ultimate !== 'refund' || card.weightClass !== 'ultimate') return 0;
+  if (!events.some((event) => event.kind === 'actor_died')) return 0;
+  return Math.floor(actionDelay(card.weight, BASE_SPEED) / 2);
+}
+
+interface PendingOrder {
+  readonly actor: Actor;
+  readonly card: CardDefinition;
+  readonly target: Actor;
+}
+
+/**
+ * GDD §22 Q1, candidate (a): the blow is committed now and lands at now +
+ * Weight. The player keeps acting while it is in flight, and the queue shows it
+ * coming — so the cost is commitment and exposure rather than four lost turns.
+ */
+function commitPending(state: CombatState, order: PendingOrder): CombatStep {
+  const landsAt = addTicks(state.now, order.card.weight);
+  const pending: PendingStrike = {
+    card: order.card.id,
+    name: order.card.name,
+    source: order.actor.id,
+    target: order.target.id,
+    amount: order.card.damage,
+    landsAt,
+  };
+
+  return {
+    state: { ...state, pending: [...state.pending, pending] },
+    events: [
+      {
+        kind: 'strike_committed',
+        at: state.now,
+        actor: order.actor.id,
+        card: order.card.id,
+        landsAt,
+      },
+    ],
   };
 }
 
@@ -161,7 +227,10 @@ function applyDamage(state: CombatState, order: DamageOrder): CombatStep {
 
   // GDD §4.6: a single hit at or above the Poise threshold staggers. The check
   // uses the damage the attack carried, before Guard soaked any of it.
-  const shaken = isAlive(wounded) && breaksPoise(wounded, amount) ? stagger(wounded) : null;
+  const shaken =
+    isAlive(wounded) && breaksPoise(wounded, amount)
+      ? stagger(wounded, state.rules.firstStagger)
+      : null;
   if (shaken !== null) {
     events.push({ kind: 'staggered', at: state.now, actor: order.target, delay: shaken.delay });
   }
@@ -262,7 +331,7 @@ function resolveEnemyTurn(state: CombatState, enemy: Actor): CombatStep {
   // what happened, and what it shows next is what comes next (GDD §4.2).
   const inflicted = inflictIntent(struck.state, intent.applies);
   const rotated = { ...currentActor(inflicted.state, enemy), intentIndex: nextIntentIndex(enemy) };
-  const acted = withActor(inflicted.state, reschedule(rotated, at, intent.weight));
+  const acted = withActor(inflicted.state, reschedule(rotated, at, { weight: intent.weight }));
 
   return settleOutcome({ ...acted, activeActorId: null }, [
     ...events,
@@ -374,14 +443,20 @@ function commitWait(state: CombatState, actor: Actor): CombatStep {
   const drawn = drawOne(bled.state);
 
   // GDD §4.3: Weight 3, draw 1, gain 3 Guard.
-  const guarded = withActor(drawn.state, gainGuard(currentActor(drawn.state, actor), WAIT_GUARD));
-  const acted = withActor(guarded, reschedule(currentActor(guarded, actor), at, WAIT_WEIGHT));
+  const guarded = withActor(
+    drawn.state,
+    gainGuard(currentActor(drawn.state, actor), state.rules.waitGuard, state.rules.guardCap),
+  );
+  const acted = withActor(
+    guarded,
+    reschedule(currentActor(guarded, actor), at, { weight: state.rules.waitWeight }),
+  );
 
   return settleOutcome({ ...acted, activeActorId: null }, [
     { kind: 'waited', at, actor: actor.id },
     ...bled.events,
     ...drawn.events,
-    { kind: 'guard_gained', at, actor: actor.id, amount: WAIT_GUARD },
+    { kind: 'guard_gained', at, actor: actor.id, amount: state.rules.waitGuard },
     scheduledEvent(acted, actor.id, at),
   ]);
 }
@@ -411,15 +486,20 @@ function commitPlay(
 
   const at = state.now;
   const bled = sufferBleed(state, actor);
-  const struck = applyDamage(bled.state, {
-    source: actor.id,
-    target: target.id,
-    amount: card.damage,
-  });
+  const windup = usesWindup(state, card);
+
+  const struck = windup
+    ? commitPending(bled.state, { actor, card, target })
+    : applyDamage(bled.state, { source: actor.id, target: target.id, amount: card.damage });
+
   const cooled = sendToCooldown(struck.state, card.id);
+  const committed = windup ? WINDUP_COMMIT_WEIGHT : card.weight;
   const acted = withActor(
     cooled.state,
-    reschedule(currentActor(cooled.state, actor), at, card.weight),
+    reschedule(currentActor(cooled.state, actor), at, {
+      weight: committed,
+      refund: refundOnKill(state, card, struck.events),
+    }),
   );
 
   return {

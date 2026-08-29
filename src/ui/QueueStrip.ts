@@ -148,7 +148,7 @@ export class QueueStrip {
       this.text({
         x: 0,
         y: 8,
-        value: actor?.name ?? '—',
+        value: slot.kind === 'strike' ? (slot.intent?.name ?? '—') : (actor?.name ?? '—'),
         size: TYPE.slotName,
         color: isPlayer ? PLAYER_INK : INK,
         origin: CENTERED,
@@ -210,6 +210,8 @@ function playerTick(state: CombatState, queue: readonly QueueSlot[]): Tick | nul
 
 function caption(options: SlotOptions, isPlayer: boolean, landsFirst: boolean): string {
   const { slot, ghost } = options;
+
+  if (slot.kind === 'strike') return `lands · ${String(slot.intent?.damage ?? 0)} dmg`;
 
   if (isPlayer) {
     const from = ghost?.livePlayerTick;

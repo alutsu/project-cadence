@@ -1,8 +1,9 @@
 import { isAlive, type Actor } from './actor.ts';
 import type { CombatEvent } from './events.ts';
-import { decayGuard } from './guard.ts';
+import { absorb, decayGuard } from './guard.ts';
+import { breaksPoise, stagger } from './poise.ts';
 import { returnDueCards } from './piles.ts';
-import type { CombatState } from './state.ts';
+import type { CombatState, PendingStrike } from './state.ts';
 import { withActor } from './state.ts';
 import {
   BURN_INTERVAL,
@@ -47,7 +48,7 @@ function carryTo(state: CombatState, to: Tick): CombatState {
   return {
     ...state,
     now: to,
-    actors: state.actors.map((actor) => decayGuard(actor, elapsed)),
+    actors: state.actors.map((actor) => decayGuard(actor, elapsed, state.rules.guardDecayPerTick)),
   };
 }
 
@@ -55,6 +56,7 @@ function carryTo(state: CombatState, to: Tick): CombatState {
 function nextEffectTick(state: CombatState, limit: Tick): Tick | null {
   const pending = [
     ...state.cooldown.map((entry) => entry.returnTick),
+    ...state.pending.map((strike) => strike.landsAt),
     ...state.actors.flatMap((actor) => actor.statuses.flatMap(statusTicks)),
   ].filter((at) => at > state.now && at <= limit);
 
@@ -75,13 +77,59 @@ function statusTicks(status: Status): Tick[] {
  */
 function resolveAt(state: CombatState, at: Tick): EffectStep {
   const returned = returnDueCards(state, at);
-  const procs = resolveProcs(returned.state, at);
+  const landed = landPendingStrikes(returned.state, at);
+  const procs = resolveProcs(landed.state, at);
   const expiries = resolveExpiries(procs.state, at);
 
   return {
     state: expiries.state,
-    events: [...returned.events, ...procs.events, ...expiries.events],
+    events: [...returned.events, ...landed.events, ...procs.events, ...expiries.events],
   };
+}
+
+/** Ultimates in flight under the wind-up rule (GDD §22 Q1) arriving. */
+function landPendingStrikes(state: CombatState, at: Tick): EffectStep {
+  const due = state.pending.filter((strike) => strike.landsAt <= at);
+  if (due.length === 0) return { state, events: [] };
+
+  const events: CombatEvent[] = [];
+  let current: CombatState = { ...state, pending: state.pending.filter((s) => s.landsAt > at) };
+
+  for (const strike of due) {
+    const struck = strikeTarget(current, strike, at);
+    current = struck.state;
+    events.push({ kind: 'strike_landed', at, card: strike.card }, ...struck.events);
+  }
+
+  return { state: current, events };
+}
+
+function strikeTarget(state: CombatState, strike: PendingStrike, at: Tick): EffectStep {
+  const target = state.actors.find((actor) => actor.id === strike.target);
+  if (target === undefined || !isAlive(target)) return { state, events: [] };
+
+  const { actor: wounded, absorbed } = absorb(target, strike.amount);
+  const events: CombatEvent[] = [
+    {
+      kind: 'damage_dealt',
+      at,
+      source: strike.source,
+      target: strike.target,
+      amount: strike.amount,
+    },
+  ];
+  if (absorbed > 0)
+    events.push({ kind: 'guard_absorbed', at, actor: strike.target, amount: absorbed });
+
+  const shaken =
+    isAlive(wounded) && breaksPoise(wounded, strike.amount)
+      ? stagger(wounded, state.rules.firstStagger)
+      : null;
+  if (shaken !== null)
+    events.push({ kind: 'staggered', at, actor: strike.target, delay: shaken.delay });
+  if (!isAlive(wounded)) events.push({ kind: 'actor_died', at, actor: strike.target });
+
+  return { state: withActor(state, shaken?.actor ?? wounded), events };
 }
 
 function resolveProcs(state: CombatState, at: Tick): EffectStep {

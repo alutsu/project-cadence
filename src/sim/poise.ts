@@ -19,8 +19,8 @@ export const MIN_POISE = 1;
  * Without it a Break build denies a slow boss every turn and the encounter
  * stops being a game.
  */
-export function staggerDelay(alreadyApplied: number): Tick {
-  return tick(Math.max(MIN_STAGGER, FIRST_STAGGER - alreadyApplied));
+export function staggerDelay(alreadyApplied: number, first = FIRST_STAGGER): Tick {
+  return tick(Math.max(MIN_STAGGER, first - alreadyApplied));
 }
 
 /** Poise after Brittle (GDD §4.5), never below one. */
@@ -39,8 +39,8 @@ export interface StaggerResult {
 }
 
 /** Pushes the actor's next turn back, and remembers that it happened. */
-export function stagger(actor: Actor): StaggerResult {
-  const delay = staggerDelay(actor.staggersTaken);
+export function stagger(actor: Actor, first = FIRST_STAGGER): StaggerResult {
+  const delay = staggerDelay(actor.staggersTaken, first);
   return {
     actor: {
       ...actor,

@@ -1,6 +1,6 @@
 # M0 — Feel Test: Implementation Plan
 
-**Milestone owner:** solo · **Budget:** 4–6 weeks (GDD §18) · **Status:** S0–S4 complete — the M0 thesis is testable
+**Milestone owner:** solo · **Budget:** 4–6 weeks (GDD §18) · **Status:** S0–S8 complete — the gate is ready to run (docs/M0_GATE.md) — the M0 thesis is testable
 
 **Traces to:** GDD §18 (M0 item list), §4 (all of combat), §20 (architecture), §22 Q1
 (Ultimates — scheduled for resolution here), §21 Risk 1 (fatal risk this milestone exists

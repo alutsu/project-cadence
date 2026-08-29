@@ -1,4 +1,5 @@
 import type { Actor } from './actor.ts';
+import { DEFAULT_RULES } from './rules.ts';
 
 /**
  * Guard (GDD §4.4) — the game's only mitigation, and deliberately time-shaped.
@@ -6,17 +7,16 @@ import type { Actor } from './actor.ts';
  * first. Because it decays in the same unit the queue uses, the player can read
  * the strip and see whether it survives to the enemy's next action.
  */
-export const GUARD_CAP = 40;
-export const GUARD_DECAY_PER_TICK = 1;
+export const GUARD_CAP = DEFAULT_RULES.guardCap;
 
-export function gainGuard(actor: Actor, amount: number): Actor {
-  return { ...actor, guard: Math.min(GUARD_CAP, actor.guard + amount) };
+export function gainGuard(actor: Actor, amount: number, cap = GUARD_CAP): Actor {
+  return { ...actor, guard: Math.min(cap, actor.guard + amount) };
 }
 
 /** Guard lost to the passage of time, never below zero. */
-export function decayGuard(actor: Actor, elapsed: number): Actor {
+export function decayGuard(actor: Actor, elapsed: number, perTick = 1): Actor {
   if (actor.guard === 0 || elapsed <= 0) return actor;
-  return { ...actor, guard: Math.max(0, actor.guard - elapsed * GUARD_DECAY_PER_TICK) };
+  return { ...actor, guard: Math.max(0, actor.guard - elapsed * perTick) };
 }
 
 export interface Absorption {
