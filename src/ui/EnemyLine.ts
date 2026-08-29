@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { isAlive, type Actor } from '../sim/actor.ts';
+import { currentIntent, isAlive, type Actor } from '../sim/actor.ts';
 import type { ActorId } from '../sim/ids.ts';
 import type { CombatState } from '../sim/state.ts';
 import { describeStatuses } from './statusText.ts';
@@ -105,7 +105,7 @@ export class EnemyLine {
       );
     }
 
-    const intent = enemy.intent;
+    const intent = currentIntent(enemy);
     const telegraph =
       intent === null
         ? 'waiting'

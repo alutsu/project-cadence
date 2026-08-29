@@ -1,6 +1,6 @@
 import type { ActorId } from './ids.ts';
 import { effectiveSpeed } from './speed.ts';
-import { speedModifier, type Status } from './status.ts';
+import { speedModifier, type Status, type StatusKind } from './status.ts';
 import type { Tick } from './tick.ts';
 
 export type Side = 'player' | 'enemy';
@@ -8,12 +8,20 @@ export type Side = 'player' | 'enemy';
 /**
  * What an enemy has telegraphed as its next action (GDD §4.2). The Weight is
  * part of the telegraph, which is what makes the 8-slot forecast honest.
- * Selection logic arrives with the real archetypes in S7.
  */
 export interface Intent {
   readonly name: string;
   readonly weight: Tick;
   readonly damage: number;
+  /** A status the intent inflicts on its target, if any (GDD §4.5). */
+  readonly applies: StatusApplication | null;
+}
+
+export interface StatusApplication {
+  readonly kind: StatusKind;
+  readonly magnitude: number;
+  /** Ticks the status lasts, or null when it ends by running out (Poison). */
+  readonly duration: Tick | null;
 }
 
 export interface Actor {
@@ -37,7 +45,23 @@ export interface Actor {
   readonly nextActTick: Tick;
   /** The actor's own action count, for the draw rule above the soft cap (§4.7). */
   readonly actionsCommitted: number;
-  readonly intent: Intent | null;
+  /**
+   * The archetype's intent rotation, cycled in order. Deterministic on purpose:
+   * a rotation the player can learn is what lets the queue forecast stay honest
+   * eight slots out rather than only for the next telegraphed action (§4.2).
+   */
+  readonly intents: readonly Intent[];
+  readonly intentIndex: number;
+}
+
+/** What this actor has telegraphed, or null if it acts on nothing. */
+export function currentIntent(actor: Actor): Intent | null {
+  return actor.intents[actor.intentIndex] ?? null;
+}
+
+/** The rotation advanced by one, wrapping. */
+export function nextIntentIndex(actor: Actor): number {
+  return actor.intents.length === 0 ? 0 : (actor.intentIndex + 1) % actor.intents.length;
 }
 
 export function isAlive(actor: Actor): boolean {

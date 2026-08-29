@@ -209,16 +209,15 @@ function playerTick(state: CombatState, queue: readonly QueueSlot[]): Tick | nul
 }
 
 function caption(options: SlotOptions, isPlayer: boolean, landsFirst: boolean): string {
-  const { state, slot, ghost } = options;
-  const actor = findActor(state, slot.actor);
+  const { slot, ghost } = options;
 
   if (isPlayer) {
     const from = ghost?.livePlayerTick;
     return from === undefined || from === null ? 'your turn' : `now t${String(from)}`;
   }
 
-  const intent = actor?.intent;
-  if (intent === undefined || intent === null) return '—';
+  const intent = slot.intent;
+  if (intent === null) return '—';
 
   // In ghost form the slot already names the actor, so the caption spends its
   // width on what the player is deciding about: this one acts before you do.

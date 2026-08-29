@@ -1,6 +1,14 @@
 import type { Action, IllegalAction } from './actions.ts';
 import { WAIT_GUARD, WAIT_WEIGHT } from './actions.ts';
-import { actorSpeed, isAlive, type Actor, type Intent } from './actor.ts';
+import {
+  actorSpeed,
+  currentIntent,
+  isAlive,
+  nextIntentIndex,
+  type Actor,
+  type Intent,
+  type StatusApplication,
+} from './actor.ts';
 import { findCard, type CardCatalogue } from './card.ts';
 import { advanceTime } from './effects.ts';
 import { absorb, gainGuard } from './guard.ts';
@@ -18,8 +26,8 @@ import {
   type CombatOutcome,
   type CombatState,
 } from './state.ts';
-import { damageScale, magnitudeOf, type Status } from './status.ts';
-import { addTicks, TICK_ZERO, type Tick } from './tick.ts';
+import { POISON_INTERVAL, damageScale, isPeriodic, magnitudeOf, type Status } from './status.ts';
+import { addTicks, TICK_ZERO, tick, type Tick } from './tick.ts';
 
 /**
  * Combat is a reducer: `(State, Action) => State`, immutable, emitting an event
@@ -44,7 +52,7 @@ export interface ActorSeed {
   readonly maxHp: number;
   /** GDD §4.6. Zero means nothing staggers this actor — the player's case. */
   readonly poise: number;
-  readonly intent: Intent | null;
+  readonly intents: readonly Intent[];
 }
 
 export interface CombatSetup {
@@ -115,7 +123,8 @@ function seedActor(seed: ActorSeed, index: number): Actor {
     statuses: [],
     nextActTick: combatSeedTick(effectiveSpeed(seed.baseSpeed, NO_SPEED_GAIN)),
     actionsCommitted: 0,
-    intent: seed.intent,
+    intents: seed.intents,
+    intentIndex: 0,
   };
 }
 
@@ -159,6 +168,21 @@ function applyDamage(state: CombatState, order: DamageOrder): CombatStep {
   if (!isAlive(wounded)) events.push({ kind: 'actor_died', at: state.now, actor: order.target });
 
   return { state: withActor(state, shaken?.actor ?? wounded), events };
+}
+
+/** Applies an intent's status to the player, if it carries one (GDD §4.5). */
+function inflictIntent(state: CombatState, application: StatusApplication | null): CombatStep {
+  const player = playerActor(state);
+  if (application === null || player === undefined || !isAlive(player)) {
+    return { state, events: [] };
+  }
+
+  return applyStatus(state, player.id, {
+    kind: application.kind,
+    magnitude: application.magnitude,
+    expiresAt: application.duration === null ? null : addTicks(state.now, application.duration),
+    nextProcAt: isPeriodic(application.kind) ? addTicks(state.now, tick(POISON_INTERVAL)) : null,
+  });
 }
 
 /** GDD §4.5: Bleed deals its damage whenever the afflicted actor acts. */
@@ -216,7 +240,7 @@ function settleOutcome(state: CombatState, events: readonly CombatEvent[]): Comb
 function resolveEnemyTurn(state: CombatState, enemy: Actor): CombatStep {
   const at = enemy.nextActTick;
   const started: CombatState = { ...state, now: at, activeActorId: enemy.id };
-  const intent = enemy.intent;
+  const intent = currentIntent(enemy);
   if (intent === null) {
     return { state: started, events: [{ kind: 'turn_started', at, actor: enemy.id }] };
   }
@@ -234,13 +258,16 @@ function resolveEnemyTurn(state: CombatState, enemy: Actor): CombatStep {
       ? { state: bled.state, events: [] }
       : applyDamage(bled.state, { source: enemy.id, target: player.id, amount: intent.damage });
 
-  const acted = withActor(
-    struck.state,
-    reschedule(currentActor(struck.state, enemy), at, intent.weight),
-  );
+  // The intent lands, then the rotation advances — so what the strip showed is
+  // what happened, and what it shows next is what comes next (GDD §4.2).
+  const inflicted = inflictIntent(struck.state, intent.applies);
+  const rotated = { ...currentActor(inflicted.state, enemy), intentIndex: nextIntentIndex(enemy) };
+  const acted = withActor(inflicted.state, reschedule(rotated, at, intent.weight));
+
   return settleOutcome({ ...acted, activeActorId: null }, [
     ...events,
     ...struck.events,
+    ...inflicted.events,
     scheduledEvent(acted, enemy.id, at),
   ]);
 }

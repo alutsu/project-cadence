@@ -66,16 +66,18 @@ describe('determinism (GDD §20.2, CLAUDE.md §7.2)', () => {
       't6 turn player',
       't6 no draw (draw_pile_empty)',
       // A Heavy card costs ten ticks — but 24 damage clears the rat's Poise
-      // threshold of 8, so the bite due at t9 slides to t12 (GDD §4.6).
+      // threshold, so the bite due at t9 slides to t12 (GDD §4.6).
       't6 played player crush w10',
       't6 damage player -> rat 24',
       't6 staggered rat +3',
       // Recovery 26: gone until t32, and the strip can say so in advance.
       't6 cooldown crush -> t32',
       't6 scheduled player -> t16',
+      // The rat's rotation has advanced: the second intent carries Poison.
       't12 turn rat',
-      't12 intent rat Gnaw',
-      't12 damage rat -> player 3',
+      't12 intent rat Venom Bite',
+      't12 damage rat -> player 2',
+      't12 poison player 4',
       't12 scheduled rat -> t16',
       // Both are due at t16; the rat is faster, so it bites first (GDD §4.1).
       't16 turn rat',
@@ -89,6 +91,8 @@ describe('determinism (GDD §20.2, CLAUDE.md §7.2)', () => {
       't16 no draw (draw_pile_empty)',
       't16 guard player +3',
       't16 scheduled player -> t19',
+      // Poison runs on its own five-tick clock and ignores Guard (GDD §4.5).
+      't17 poison player ticks 4',
       't19 turn player',
       't19 no draw (draw_pile_empty)',
       't19 played player strike w4',
@@ -105,7 +109,7 @@ describe('determinism (GDD §20.2, CLAUDE.md §7.2)', () => {
     const { state } = play(SCRIPT);
 
     expect(state.outcome).toBe('won');
-    expect(findActor(state, PLAYER)?.hp).toBe(61);
+    expect(findActor(state, PLAYER)?.hp).toBe(58);
     expect(findActor(state, RAT)?.hp).toBe(0);
   });
 });

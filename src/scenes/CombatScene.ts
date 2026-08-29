@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { m0Catalogue } from '../data/cards.ts';
-import { ratAndWarden } from '../data/encounters.ts';
+import { ENCOUNTERS } from '../data/encounters.ts';
 import type { Action } from '../sim/actions.ts';
 import { isAlive } from '../sim/actor.ts';
 import type { CardDefinition } from '../sim/card.ts';
@@ -11,6 +11,7 @@ import { createRng } from '../sim/rng.ts';
 import { hasPlayableCard } from '../sim/piles.ts';
 import { findActor, type CombatState } from '../sim/state.ts';
 import { ActionBar } from '../ui/ActionBar.ts';
+import { EncounterBanner } from '../ui/EncounterBanner.ts';
 import { EnemyLine } from '../ui/EnemyLine.ts';
 import { Hand } from '../ui/Hand.ts';
 import { PilesPanel } from '../ui/PilesPanel.ts';
@@ -25,6 +26,7 @@ interface CombatViews {
   readonly bar: ActionBar;
   readonly readout: PreviewReadout;
   readonly piles: PilesPanel;
+  readonly banner: EncounterBanner;
 }
 
 /**
@@ -35,7 +37,8 @@ interface CombatViews {
  * S4 replaces the fixed hand with the real draw / Cooldown piles (GDD §4.9).
  */
 export class CombatScene extends Phaser.Scene {
-  private state: CombatState = openingState();
+  private encounterIndex = 0;
+  private state: CombatState = openingState(0);
   private target: ActorId | null = null;
   private views: CombatViews | null = null;
   private autoWait: Phaser.Time.TimerEvent | null = null;
@@ -76,7 +79,14 @@ export class CombatScene extends Phaser.Scene {
       }),
       readout: new PreviewReadout(this),
       piles: new PilesPanel(this),
+      banner: new EncounterBanner(this),
     };
+
+    // Once an encounter is over the cards are inert, so a click anywhere is
+    // unambiguous: it means "next".
+    this.input.on(Phaser.Input.Events.POINTER_DOWN, () => {
+      this.advanceEncounter();
+    });
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.teardown();
@@ -120,6 +130,16 @@ export class CombatScene extends Phaser.Scene {
 
     views.queue.render(this.state);
     views.readout.render('', null);
+  }
+
+  /** A cleared or lost encounter moves on to the next one in the set. */
+  private advanceEncounter(): void {
+    if (this.state.outcome === 'ongoing') return;
+
+    this.encounterIndex = (this.encounterIndex + 1) % ENCOUNTERS.length;
+    this.state = openingState(this.encounterIndex);
+    this.target = firstLivingEnemy(this.state);
+    this.renderAll();
   }
 
   private selectTarget(actor: ActorId): void {
@@ -171,6 +191,13 @@ export class CombatScene extends Phaser.Scene {
     views.bar.render(this.state);
     views.readout.render('', null);
     views.piles.render(this.state);
+    views.banner.render(
+      encounterAt(this.encounterIndex).name,
+      encounterAt(this.encounterIndex).teaches,
+      this.state.outcome === 'ongoing'
+        ? ''
+        : `${outcomeWord(this.state.outcome)} — click to continue`,
+    );
     this.armAutoWait();
   }
 
@@ -204,6 +231,8 @@ export class CombatScene extends Phaser.Scene {
     views.bar.destroy();
     views.readout.destroy();
     views.piles.destroy();
+    views.banner.destroy();
+    this.input.removeAllListeners();
     this.autoWait?.remove();
     this.autoWait = null;
     this.views = null;
@@ -213,10 +242,20 @@ export class CombatScene extends Phaser.Scene {
 /** GDD §4.3: the beat before Wait is taken for the player. */
 const AUTO_WAIT_DELAY_MS = 1500;
 
-function openingState(): CombatState {
+function encounterAt(index: number): (typeof ENCOUNTERS)[number] {
+  const encounter = ENCOUNTERS[index % ENCOUNTERS.length];
+  if (encounter === undefined) throw new Error('the encounter set is empty');
+  return encounter;
+}
+
+function outcomeWord(outcome: CombatState['outcome']): string {
+  return outcome === 'won' ? 'cleared' : 'you died';
+}
+
+function openingState(index: number): CombatState {
   const catalogue = m0Catalogue();
   const started = startCombat({
-    actors: ratAndWarden(),
+    actors: encounterAt(index).actors,
     catalogue,
     deck: Object.keys(catalogue).map(cardId),
     // M0 has no run seed yet; the map and gem streams arrive with the run layer.

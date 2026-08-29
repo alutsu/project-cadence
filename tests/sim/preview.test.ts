@@ -161,11 +161,13 @@ describe('what the preview tells the player (GDD §4.2, §15)', () => {
     const preview = previewAction(state, { kind: 'play', card: cardId('crush'), target: rat });
     if (preview === null) throw new Error('crush should be legal');
 
-    // Playing at t6 for Weight 10 puts the player at t16. The rat bites at t9
-    // and t13, and the Warden's telegraphed swing lands at t9.
+    // Playing at t6 for Weight 10 puts the player at t16. Crush also breaks the
+    // rat's Poise, so its bite slides from t9 to t12 — but three enemy turns
+    // still land first: the Warden's swing at t9, then the rat twice.
     expect(preview.playerNextTick).toBe(16);
     expect(preview.enemyTurnsBeforePlayer).toBe(3);
-    expect(preview.incomingDamage).toBe(24);
+    expect(preview.incomingDamage).toBe(26);
+    expect(preview.staggers).toEqual([expect.objectContaining({ delay: 3 })]);
   });
 
   it('counts an enemy that shares the player tick but wins the tie-break', () => {
@@ -183,9 +185,10 @@ describe('what the preview tells the player (GDD §4.2, §15)', () => {
 
     // The player returns at t9 — and so does the rat, which wins the tie on
     // Speed (GDD §4.1). One bite lands first, not none: "before you" is a
-    // question about queue order, not about tick numbers.
+    // question about queue order, not about tick numbers. The rat has already
+    // acted once, so its rotation is on Venom Bite (GDD §12.2).
     expect(waiting.playerNextTick).toBe(9);
     expect(waiting.enemyTurnsBeforePlayer).toBe(1);
-    expect(waiting.incomingDamage).toBe(3);
+    expect(waiting.incomingDamage).toBe(2);
   });
 });

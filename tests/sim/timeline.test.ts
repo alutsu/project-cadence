@@ -28,7 +28,8 @@ function actor(spec: ActorSpec): Actor {
     statuses: [],
     nextActTick: tick(at),
     actionsCommitted: 0,
-    intent: null,
+    intents: [],
+    intentIndex: 0,
   };
 }
 

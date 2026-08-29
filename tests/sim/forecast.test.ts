@@ -59,7 +59,7 @@ describe('the queue forecast (GDD §4.2)', () => {
     const state = opened(soloRat());
     const alone = { ...state, actors: state.actors.filter((actor) => actor.id !== RAT) };
 
-    expect(forecastQueue(alone)).toEqual([{ actor: PLAYER, at: 6 }]);
+    expect(forecastQueue(alone)).toEqual([expect.objectContaining({ actor: PLAYER, at: 6 })]);
   });
 
   it('omits the dead', () => {

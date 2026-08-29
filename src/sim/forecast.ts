@@ -1,12 +1,12 @@
 import type { Action } from './actions.ts';
-import type { Actor } from './actor.ts';
+import type { Actor, Intent } from './actor.ts';
 import { reduce } from './combat.ts';
 import type { ActorId } from './ids.ts';
 import { actionDelay } from './speed.ts';
 import { findActor, type CombatState } from './state.ts';
 import { nextToAct } from './timeline.ts';
 import { addTicks, type Tick } from './tick.ts';
-import { actorSpeed, isAlive } from './actor.ts';
+import { actorSpeed, currentIntent, isAlive, nextIntentIndex } from './actor.ts';
 
 /** GDD §4.2: the next eight turn slots render as a strip at the top of combat. */
 export const QUEUE_SLOTS = 8;
@@ -14,6 +14,11 @@ export const QUEUE_SLOTS = 8;
 export interface QueueSlot {
   readonly actor: ActorId;
   readonly at: Tick;
+  /**
+   * What the actor will do in *this* slot. Carried on the slot rather than read
+   * off the actor, because a rotation means slot six is not slot one's intent.
+   */
+  readonly intent: Intent | null;
 }
 
 /**
@@ -37,7 +42,7 @@ export function forecastQueue(
     const acting = nextToAct(pool);
     if (acting === null) break;
 
-    forecast.push({ actor: acting.id, at: acting.nextActTick });
+    forecast.push({ actor: acting.id, at: acting.nextActTick, intent: currentIntent(acting) });
     pool = pool.filter((actor) => actor.id !== acting.id);
 
     const projected = projectNextTurn(acting);
@@ -49,11 +54,15 @@ export function forecastQueue(
 
 /** An actor's next scheduled turn, or null when it cannot honestly be known. */
 function projectNextTurn(actor: Actor): Actor | null {
-  if (actor.side === 'player' || actor.intent === null) return null;
+  const intent = currentIntent(actor);
+  if (actor.side === 'player' || intent === null) return null;
 
+  // The rotation is deterministic, so the projection advances it too: slot six
+  // shows the intent that will actually be telegraphed there (GDD §4.2).
   return {
     ...actor,
-    nextActTick: addTicks(actor.nextActTick, actionDelay(actor.intent.weight, actorSpeed(actor))),
+    nextActTick: addTicks(actor.nextActTick, actionDelay(intent.weight, actorSpeed(actor))),
+    intentIndex: nextIntentIndex(actor),
   };
 }
 
@@ -116,7 +125,7 @@ export function previewAction(state: CombatState, action: Action): ActionPreview
       .map((event) => ({ target: event.target, amount: event.amount })),
     playerNextTick,
     enemyTurnsBeforePlayer: before.length,
-    incomingDamage: before.reduce((total, slot) => total + intentDamage(projected, slot), 0),
+    incomingDamage: before.reduce((total, slot) => total + intentDamage(slot), 0),
     staggers: result.step.events
       .filter((event) => event.kind === 'staggered')
       .map((event) => ({ actor: event.actor, delay: event.delay })),
@@ -127,6 +136,6 @@ function isPlayerSlot(state: CombatState, slot: QueueSlot): boolean {
   return findActor(state, slot.actor)?.side === 'player';
 }
 
-function intentDamage(state: CombatState, slot: QueueSlot): number {
-  return findActor(state, slot.actor)?.intent?.damage ?? 0;
+function intentDamage(slot: QueueSlot): number {
+  return slot.intent?.damage ?? 0;
 }
