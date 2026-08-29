@@ -2,7 +2,8 @@ import Phaser from 'phaser';
 import { isAlive, type Actor } from '../sim/actor.ts';
 import type { ActorId } from '../sim/ids.ts';
 import type { CombatState } from '../sim/state.ts';
-import { COLORS, ENEMY_INK, FONT, INK, LAYOUT, MUTED, TYPE } from './theme.ts';
+import { describeStatuses } from './statusText.ts';
+import { COLORS, ENEMY_INK, FONT, GUARD_INK, INK, LAYOUT, MUTED, TYPE } from './theme.ts';
 
 export interface EnemyLineOptions {
   readonly scene: Phaser.Scene;
@@ -71,6 +72,24 @@ export class EnemyLine {
         })
         .setOrigin(0.5, 0.5),
     );
+
+    const condition = [
+      enemy.guard > 0 ? `GUARD ${String(enemy.guard)}` : '',
+      describeStatuses(enemy.statuses),
+    ]
+      .filter((part) => part.length > 0)
+      .join('  ·  ');
+    if (condition.length > 0) {
+      view.add(
+        scene.add
+          .text(0, -height / 2 + 96, condition, {
+            fontFamily: FONT,
+            fontSize: TYPE.slotIntent,
+            color: GUARD_INK,
+          })
+          .setOrigin(0.5, 0.5),
+      );
+    }
 
     const intent = enemy.intent;
     const telegraph =

@@ -1,6 +1,17 @@
 import Phaser from 'phaser';
 import { playerActor, type CombatState } from '../sim/state.ts';
-import { COLORS, FONT, INK, LAYOUT, MUTED, PLAYER_INK, TYPE } from './theme.ts';
+import { describeStatuses, guardHoldsUntil } from './statusText.ts';
+import {
+  COLORS,
+  ENEMY_INK,
+  FONT,
+  GUARD_INK,
+  INK,
+  LAYOUT,
+  MUTED,
+  PLAYER_INK,
+  TYPE,
+} from './theme.ts';
 
 export interface ActionBarOptions {
   readonly scene: Phaser.Scene;
@@ -17,6 +28,8 @@ const WAIT_LABEL = 'WAIT  W3';
  */
 export class ActionBar {
   private readonly hp: Phaser.GameObjects.Text;
+  private readonly guard: Phaser.GameObjects.Text;
+  private readonly statuses: Phaser.GameObjects.Text;
   private readonly clock: Phaser.GameObjects.Text;
   private readonly button: Phaser.GameObjects.Rectangle;
   private readonly buttonLabel: Phaser.GameObjects.Text;
@@ -28,6 +41,20 @@ export class ActionBar {
 
     this.hp = scene.add
       .text(margin, bottom, '', { fontFamily: FONT, fontSize: TYPE.hud, color: PLAYER_INK })
+      .setOrigin(0, 1);
+
+    // Guard is quoted with the tick it runs out on, so the player can read it
+    // straight off the queue rather than doing arithmetic (GDD §4.4, §15).
+    this.guard = scene.add
+      .text(margin, bottom - 34, '', { fontFamily: FONT, fontSize: TYPE.hud, color: GUARD_INK })
+      .setOrigin(0, 1);
+
+    this.statuses = scene.add
+      .text(margin, bottom - 68, '', {
+        fontFamily: FONT,
+        fontSize: TYPE.slotName,
+        color: ENEMY_INK,
+      })
       .setOrigin(0, 1);
 
     this.clock = scene.add
@@ -67,6 +94,8 @@ export class ActionBar {
     this.hp.setText(
       player === undefined ? '' : `HP ${String(player.hp)} / ${String(player.maxHp)}`,
     );
+    this.guard.setText(guardCaption(player?.guard ?? 0, state));
+    this.statuses.setText(describeStatuses(player?.statuses ?? []));
     this.clock.setText(`tick ${String(state.now)}   ${outcomeCaption(state)}`);
   }
 
@@ -75,8 +104,15 @@ export class ActionBar {
     this.button.destroy();
     this.buttonLabel.destroy();
     this.hp.destroy();
+    this.guard.destroy();
+    this.statuses.destroy();
     this.clock.destroy();
   }
+}
+
+function guardCaption(guard: number, state: CombatState): string {
+  if (guard === 0) return '';
+  return `GUARD ${String(guard)}   holds to t${String(guardHoldsUntil(guard, state.now))}`;
 }
 
 function outcomeCaption(state: CombatState): string {

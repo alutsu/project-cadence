@@ -1,4 +1,5 @@
 import type { ActorId, CardId } from './ids.ts';
+import type { StatusKind } from './status.ts';
 import type { Tick } from './tick.ts';
 
 /**
@@ -37,6 +38,38 @@ export type CombatEvent =
       readonly returnTick: Tick;
     }
   | { readonly kind: 'card_returned'; readonly at: Tick; readonly card: CardId }
+  | {
+      readonly kind: 'guard_gained';
+      readonly at: Tick;
+      readonly actor: ActorId;
+      readonly amount: number;
+    }
+  | {
+      readonly kind: 'guard_absorbed';
+      readonly at: Tick;
+      readonly actor: ActorId;
+      readonly amount: number;
+    }
+  | {
+      readonly kind: 'status_applied';
+      readonly at: Tick;
+      readonly actor: ActorId;
+      readonly status: StatusKind;
+      readonly magnitude: number;
+    }
+  | {
+      readonly kind: 'status_proc';
+      readonly at: Tick;
+      readonly actor: ActorId;
+      readonly status: StatusKind;
+      readonly amount: number;
+    }
+  | {
+      readonly kind: 'status_expired';
+      readonly at: Tick;
+      readonly actor: ActorId;
+      readonly status: StatusKind;
+    }
   | {
       readonly kind: 'intent_executed';
       readonly at: Tick;

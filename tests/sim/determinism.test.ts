@@ -84,10 +84,14 @@ describe('determinism (GDD §20.2, CLAUDE.md §7.2)', () => {
       // Wait is Weight 3 (GDD §4.3), so the player is back before the rat.
       't16 waited player',
       't16 no draw (draw_pile_empty)',
+      // Wait's 3 Guard is 3 ticks of protection or one small hit (GDD §4.4).
+      't16 guard player +3',
       't16 scheduled player -> t19',
       't17 turn rat',
       't17 intent rat Gnaw',
       't17 damage rat -> player 3',
+      // One tick of decay later, 2 Guard is left, and it eats most of the bite.
+      't17 guard player absorbed 2',
       't17 scheduled rat -> t21',
       't19 turn player',
       't19 no draw (draw_pile_empty)',
@@ -105,7 +109,7 @@ describe('determinism (GDD §20.2, CLAUDE.md §7.2)', () => {
     const { state } = play(SCRIPT);
 
     expect(state.outcome).toBe('won');
-    expect(findActor(state, PLAYER)?.hp).toBe(58);
+    expect(findActor(state, PLAYER)?.hp).toBe(60);
     expect(findActor(state, RAT)?.hp).toBe(0);
   });
 });

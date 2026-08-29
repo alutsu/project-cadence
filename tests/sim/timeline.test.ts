@@ -22,6 +22,8 @@ function actor(spec: ActorSpec): Actor {
     speedGain: 0,
     hp: 10,
     maxHp: 10,
+    guard: 0,
+    statuses: [],
     nextActTick: tick(at),
     actionsCommitted: 0,
     intent: null,

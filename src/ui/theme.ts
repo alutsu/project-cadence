@@ -14,12 +14,14 @@ export const COLORS = {
   player: 0xd9b45b,
   enemy: 0xb4574d,
   danger: 0xe0705f,
+  guard: 0x7fb3d5,
 } as const;
 
 export const INK = '#e8e4d8';
 export const MUTED = '#7d8794';
 export const PLAYER_INK = '#d9b45b';
 export const ENEMY_INK = '#d99087';
+export const GUARD_INK = '#7fb3d5';
 
 export const FONT = 'ui-monospace, "DejaVu Sans Mono", Menlo, monospace';
 

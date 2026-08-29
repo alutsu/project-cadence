@@ -1,5 +1,6 @@
 import type { ActorId } from './ids.ts';
 import { effectiveSpeed } from './speed.ts';
+import { speedModifier, type Status } from './status.ts';
 import type { Tick } from './tick.ts';
 
 export type Side = 'player' | 'enemy';
@@ -26,6 +27,9 @@ export interface Actor {
   readonly speedGain: number;
   readonly hp: number;
   readonly maxHp: number;
+  /** Time-shaped mitigation: absorbs damage and decays 1 per tick (GDD §4.4). */
+  readonly guard: number;
+  readonly statuses: readonly Status[];
   readonly nextActTick: Tick;
   /** The actor's own action count, for the draw rule above the soft cap (§4.7). */
   readonly actionsCommitted: number;
@@ -36,6 +40,7 @@ export function isAlive(actor: Actor): boolean {
   return actor.hp > 0;
 }
 
+/** Base Speed plus every Haste and Slow currently on the actor (GDD §4.5). */
 export function actorSpeed(actor: Actor): number {
-  return effectiveSpeed(actor.baseSpeed, actor.speedGain);
+  return effectiveSpeed(actor.baseSpeed, actor.speedGain + speedModifier(actor.statuses));
 }

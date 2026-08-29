@@ -25,6 +25,16 @@ export function formatEvent(event: CombatEvent): string {
       return `${at} cooldown ${event.card} -> t${String(event.returnTick)}`;
     case 'card_returned':
       return `${at} returned ${event.card}`;
+    case 'guard_gained':
+      return `${at} guard ${event.actor} +${String(event.amount)}`;
+    case 'guard_absorbed':
+      return `${at} guard ${event.actor} absorbed ${String(event.amount)}`;
+    case 'status_applied':
+      return `${at} ${event.status} ${event.actor} ${String(event.magnitude)}`;
+    case 'status_proc':
+      return `${at} ${event.status} ${event.actor} ticks ${String(event.amount)}`;
+    case 'status_expired':
+      return `${at} ${event.status} ${event.actor} ends`;
     case 'intent_executed':
       return `${at} intent ${event.actor} ${event.intent}`;
     case 'damage_dealt':

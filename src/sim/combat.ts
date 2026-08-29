@@ -1,8 +1,10 @@
 import type { Action, IllegalAction } from './actions.ts';
-import { WAIT_WEIGHT } from './actions.ts';
+import { WAIT_GUARD, WAIT_WEIGHT } from './actions.ts';
 import { actorSpeed, isAlive, type Actor, type Intent } from './actor.ts';
 import { findCard, type CardCatalogue } from './card.ts';
-import { OPENING_HAND, drawOne, returnDueCards, sendToCooldown, shuffle } from './piles.ts';
+import { advanceTime } from './effects.ts';
+import { absorb, gainGuard } from './guard.ts';
+import { OPENING_HAND, drawOne, sendToCooldown, shuffle } from './piles.ts';
 import type { Rng } from './rng.ts';
 import type { CombatEvent } from './events.ts';
 import type { ActorId, CardId } from './ids.ts';
@@ -15,6 +17,7 @@ import {
   type CombatOutcome,
   type CombatState,
 } from './state.ts';
+import { damageScale, magnitudeOf, type Status } from './status.ts';
 import { addTicks, TICK_ZERO, type Tick } from './tick.ts';
 
 /**
@@ -103,6 +106,8 @@ function seedActor(seed: ActorSeed, index: number): Actor {
     speedGain: NO_SPEED_GAIN,
     hp: seed.maxHp,
     maxHp: seed.maxHp,
+    guard: 0,
+    statuses: [],
     nextActTick: combatSeedTick(effectiveSpeed(seed.baseSpeed, NO_SPEED_GAIN)),
     actionsCommitted: 0,
     intent: seed.intent,
@@ -129,19 +134,53 @@ function applyDamage(state: CombatState, order: DamageOrder): CombatStep {
   const target = findActor(state, order.target);
   if (target === undefined || !isAlive(target)) return { state, events: [] };
 
-  const wounded: Actor = { ...target, hp: Math.max(0, target.hp - order.amount) };
+  const source = findActor(state, order.source);
+  const amount = Math.round(order.amount * damageScale(source?.statuses ?? []));
+  const { actor: wounded, absorbed } = absorb(target, amount);
+
   const events: CombatEvent[] = [
-    {
-      kind: 'damage_dealt',
-      at: state.now,
-      source: order.source,
-      target: order.target,
-      amount: order.amount,
-    },
+    { kind: 'damage_dealt', at: state.now, source: order.source, target: order.target, amount },
   ];
+  if (absorbed > 0) {
+    events.push({ kind: 'guard_absorbed', at: state.now, actor: order.target, amount: absorbed });
+  }
   if (!isAlive(wounded)) events.push({ kind: 'actor_died', at: state.now, actor: order.target });
 
   return { state: withActor(state, wounded), events };
+}
+
+/** GDD §4.5: Bleed deals its damage whenever the afflicted actor acts. */
+function sufferBleed(state: CombatState, actor: Actor): CombatStep {
+  const bleed = magnitudeOf(actor.statuses, 'bleed');
+  if (bleed === 0) return { state, events: [] };
+
+  const { actor: bled } = absorb(actor, bleed);
+  return {
+    state: withActor(state, bled),
+    events: [
+      { kind: 'status_proc', at: state.now, actor: actor.id, status: 'bleed', amount: bleed },
+    ],
+  };
+}
+
+/** Applies a status, replacing any existing one of the same kind. */
+export function applyStatus(state: CombatState, target: ActorId, status: Status): CombatStep {
+  const actor = findActor(state, target);
+  if (actor === undefined || !isAlive(actor)) return { state, events: [] };
+
+  const statuses = [...actor.statuses.filter((held) => held.kind !== status.kind), status];
+  return {
+    state: withActor(state, { ...actor, statuses }),
+    events: [
+      {
+        kind: 'status_applied',
+        at: state.now,
+        actor: target,
+        status: status.kind,
+        magnitude: status.magnitude,
+      },
+    ],
+  };
 }
 
 function currentOutcome(state: CombatState): CombatOutcome {
@@ -170,18 +209,23 @@ function resolveEnemyTurn(state: CombatState, enemy: Actor): CombatStep {
     return { state: started, events: [{ kind: 'turn_started', at, actor: enemy.id }] };
   }
 
-  const player = playerActor(started);
+  const bled = sufferBleed(started, enemy);
+  const player = playerActor(bled.state);
   const events: CombatEvent[] = [
     { kind: 'turn_started', at, actor: enemy.id },
     { kind: 'intent_executed', at, actor: enemy.id, intent: intent.name },
+    ...bled.events,
   ];
 
   const struck =
     player === undefined
-      ? { state: started, events: [] }
-      : applyDamage(started, { source: enemy.id, target: player.id, amount: intent.damage });
+      ? { state: bled.state, events: [] }
+      : applyDamage(bled.state, { source: enemy.id, target: player.id, amount: intent.damage });
 
-  const acted = withActor(struck.state, reschedule(enemy, at, intent.weight));
+  const acted = withActor(
+    struck.state,
+    reschedule(currentActor(struck.state, enemy), at, intent.weight),
+  );
   return settleOutcome({ ...acted, activeActorId: null }, [
     ...events,
     ...struck.events,
@@ -204,11 +248,19 @@ export function advanceToDecision(state: CombatState): CombatStep {
     const next = nextToAct(current.actors);
     if (next === null) return { state: current, events };
 
-    // Tick-scheduled effects resolve between turns (GDD §3), so a card whose
-    // Recovery ends exactly on your turn is back in the pile before you draw.
-    const returned = returnDueCards(current, next.nextActTick);
-    current = returned.state;
-    events.push(...returned.events);
+    // Tick-scheduled effects resolve between turns (GDD §3): Cooldown returns,
+    // damage over time, expiries, and Guard decaying one per tick along the way.
+    const elapsed = advanceTime(current, next.nextActTick);
+    current = elapsed.state;
+    events.push(...elapsed.events);
+
+    // Damage over time can settle the encounter before anyone acts again.
+    const settled = settleOutcome(current, []);
+    current = settled.state;
+    events.push(...settled.events);
+    if (current.outcome !== 'ongoing') return { state: current, events };
+
+    if (!isAlive(next)) continue;
 
     if (next.side === 'player') {
       const opened = openPlayerTurn(current, next);
@@ -279,14 +331,25 @@ function activePlayer(state: CombatState): Actor | null {
  */
 function commitWait(state: CombatState, actor: Actor): CombatStep {
   const at = state.now;
-  const drawn = drawOne(state);
-  const acted = withActor(drawn.state, reschedule(actor, at, WAIT_WEIGHT));
+  const bled = sufferBleed(state, actor);
+  const drawn = drawOne(bled.state);
+
+  // GDD §4.3: Weight 3, draw 1, gain 3 Guard.
+  const guarded = withActor(drawn.state, gainGuard(currentActor(drawn.state, actor), WAIT_GUARD));
+  const acted = withActor(guarded, reschedule(currentActor(guarded, actor), at, WAIT_WEIGHT));
 
   return settleOutcome({ ...acted, activeActorId: null }, [
     { kind: 'waited', at, actor: actor.id },
+    ...bled.events,
     ...drawn.events,
+    { kind: 'guard_gained', at, actor: actor.id, amount: WAIT_GUARD },
     scheduledEvent(acted, actor.id, at),
   ]);
+}
+
+/** The freshest copy of an actor, after earlier steps have rewritten state. */
+function currentActor(state: CombatState, actor: Actor): Actor {
+  return findActor(state, actor.id) ?? actor;
 }
 
 function commitPlay(
@@ -308,14 +371,23 @@ function commitPlay(
     return { ok: false, error: { reason: 'target_is_dead', target: action.target } };
 
   const at = state.now;
-  const struck = applyDamage(state, { source: actor.id, target: target.id, amount: card.damage });
+  const bled = sufferBleed(state, actor);
+  const struck = applyDamage(bled.state, {
+    source: actor.id,
+    target: target.id,
+    amount: card.damage,
+  });
   const cooled = sendToCooldown(struck.state, card.id);
-  const acted = withActor(cooled.state, reschedule(actor, at, card.weight));
+  const acted = withActor(
+    cooled.state,
+    reschedule(currentActor(cooled.state, actor), at, card.weight),
+  );
 
   return {
     ok: true,
     step: settleOutcome({ ...acted, activeActorId: null }, [
       { kind: 'card_played', at, actor: actor.id, card: card.id, weight: card.weight },
+      ...bled.events,
       ...struck.events,
       ...cooled.events,
       scheduledEvent(acted, actor.id, at),

@@ -11,6 +11,7 @@ export type Action =
 
 /** GDD §4.3: Wait is Weight 3, draw 1, gain 3 Guard. */
 export const WAIT_WEIGHT: Tick = tick(3);
+export const WAIT_GUARD = 3;
 
 /**
  * Why an action was refused. Illegal actions are rejected by the reducer, not
