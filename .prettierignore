@@ -1,0 +1,5 @@
+dist
+node_modules
+*.fixture
+# Design docs are hand-formatted prose and tables; Prettier must not reflow them.
+*.md

@@ -1,0 +1,10 @@
+import type { Rng } from './rng';
+
+// A comment may name Math.random, Date.now and phaser without tripping the guard.
+export function nextDelay(weight: number, effectiveSpeed: number): number {
+  return Math.ceil((weight * 100) / effectiveSpeed);
+}
+
+export function roll(rng: Rng): number {
+  return rng.next();
+}

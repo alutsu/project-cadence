@@ -1,0 +1,6 @@
+export function scheduleBadly(): number {
+  const startedAt = Date.now();
+  const roll = Math.random();
+  setTimeout(() => performance.now(), 16);
+  return startedAt + roll;
+}

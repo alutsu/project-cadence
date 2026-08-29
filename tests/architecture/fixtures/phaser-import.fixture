@@ -1,0 +1,5 @@
+import Phaser from 'phaser';
+import { QueueStrip } from '../ui/QueueStrip';
+import type { RunState } from '../run/RunState';
+
+export const violation = [Phaser, QueueStrip, null as unknown as RunState];
