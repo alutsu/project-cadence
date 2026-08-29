@@ -5,6 +5,7 @@ import { COLORS, FONT, INK, LAYOUT, MUTED, PLAYER_INK, TYPE } from './theme.ts';
 export interface ActionBarOptions {
   readonly scene: Phaser.Scene;
   readonly onWait: () => void;
+  readonly onHoverWait: (hovering: boolean) => void;
 }
 
 const WAIT_LABEL = 'WAIT  W3';
@@ -21,7 +22,7 @@ export class ActionBar {
   private readonly buttonLabel: Phaser.GameObjects.Text;
 
   constructor(options: ActionBarOptions) {
-    const { scene, onWait } = options;
+    const { scene, onWait, onHoverWait } = options;
     const { margin } = LAYOUT.hud;
     const bottom = LAYOUT.height - margin;
 
@@ -44,9 +45,11 @@ export class ActionBar {
     this.button.setInteractive({ useHandCursor: true });
     this.button.on('pointerover', () => {
       this.button.setFillStyle(COLORS.panelActive);
+      onHoverWait(true);
     });
     this.button.on('pointerout', () => {
       this.button.setFillStyle(COLORS.panel);
+      onHoverWait(false);
     });
     this.button.on('pointerdown', onWait);
 

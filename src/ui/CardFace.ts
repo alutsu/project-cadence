@@ -6,6 +6,7 @@ export interface CardFaceOptions {
   readonly scene: Phaser.Scene;
   readonly card: CardDefinition;
   readonly onPlay: (card: CardDefinition) => void;
+  readonly onHover: (card: CardDefinition | null) => void;
 }
 
 interface StatColumn {
@@ -25,7 +26,7 @@ export class CardFace {
   private readonly panel: Phaser.GameObjects.Rectangle;
 
   constructor(options: CardFaceOptions) {
-    const { scene, card, onPlay } = options;
+    const { scene, card, onPlay, onHover } = options;
     const { cardWidth, cardHeight } = LAYOUT.hand;
 
     this.view = scene.add.container(0, 0);
@@ -77,9 +78,11 @@ export class CardFace {
 
     this.panel.on('pointerover', () => {
       this.panel.setFillStyle(COLORS.panelActive);
+      onHover(card);
     });
     this.panel.on('pointerout', () => {
       this.panel.setFillStyle(COLORS.panel);
+      onHover(null);
     });
     this.panel.on('pointerdown', () => {
       onPlay(card);

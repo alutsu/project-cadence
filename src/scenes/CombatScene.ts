@@ -5,11 +5,13 @@ import type { Action } from '../sim/actions.ts';
 import { isAlive } from '../sim/actor.ts';
 import type { CardDefinition } from '../sim/card.ts';
 import { advanceToDecision, reduce, startCombat } from '../sim/combat.ts';
+import { previewAction } from '../sim/forecast.ts';
 import { cardId, type ActorId } from '../sim/ids.ts';
 import { findActor, type CombatState } from '../sim/state.ts';
 import { ActionBar } from '../ui/ActionBar.ts';
 import { EnemyLine } from '../ui/EnemyLine.ts';
 import { Hand } from '../ui/Hand.ts';
+import { PreviewReadout } from '../ui/PreviewReadout.ts';
 import { QueueStrip } from '../ui/QueueStrip.ts';
 import { COLORS } from '../ui/theme.ts';
 
@@ -18,6 +20,7 @@ interface CombatViews {
   readonly enemies: EnemyLine;
   readonly hand: Hand;
   readonly bar: ActionBar;
+  readonly readout: PreviewReadout;
 }
 
 /**
@@ -53,19 +56,64 @@ export class CombatScene extends Phaser.Scene {
         onPlay: (card) => {
           this.playCard(card);
         },
+        onHover: (card) => {
+          this.previewCard(card);
+        },
       }),
       bar: new ActionBar({
         scene: this,
         onWait: () => {
           this.commit({ kind: 'wait' });
         },
+        onHoverWait: (hovering) => {
+          this.previewWait(hovering);
+        },
       }),
+      readout: new PreviewReadout(this),
     };
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.teardown();
     });
     this.renderAll();
+  }
+
+  /**
+   * The ghost preview (GDD §4.2). Only the strip and the readout change — the
+   * hand must not be rebuilt under the pointer that is hovering it.
+   */
+  private previewCard(card: CardDefinition | null): void {
+    const target = this.currentTarget();
+    if (card === null || target === null) {
+      this.clearPreview();
+      return;
+    }
+    this.showPreview({ kind: 'play', card: card.id, target }, card.name.toUpperCase());
+  }
+
+  private previewWait(hovering: boolean): void {
+    if (hovering) {
+      this.showPreview({ kind: 'wait' }, 'WAIT');
+      return;
+    }
+    this.clearPreview();
+  }
+
+  private showPreview(action: Action, label: string): void {
+    const views = this.views;
+    if (views === null) return;
+
+    const preview = previewAction(this.state, action);
+    views.queue.render(this.state, preview);
+    views.readout.render(label, preview);
+  }
+
+  private clearPreview(): void {
+    const views = this.views;
+    if (views === null) return;
+
+    views.queue.render(this.state);
+    views.readout.render('', null);
   }
 
   private selectTarget(actor: ActorId): void {
@@ -110,6 +158,7 @@ export class CombatScene extends Phaser.Scene {
     views.enemies.render(this.state, this.target);
     views.hand.render(this.state);
     views.bar.render(this.state);
+    views.readout.render('', null);
   }
 
   private teardown(): void {
@@ -120,6 +169,7 @@ export class CombatScene extends Phaser.Scene {
     views.enemies.destroy();
     views.hand.destroy();
     views.bar.destroy();
+    views.readout.destroy();
     this.views = null;
   }
 }

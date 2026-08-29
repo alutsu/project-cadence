@@ -1,7 +1,9 @@
+import type { Action } from './actions.ts';
 import type { Actor } from './actor.ts';
+import { reduce } from './combat.ts';
 import type { ActorId } from './ids.ts';
 import { actionDelay } from './speed.ts';
-import type { CombatState } from './state.ts';
+import { findActor, type CombatState } from './state.ts';
 import { nextToAct } from './timeline.ts';
 import { addTicks, type Tick } from './tick.ts';
 import { actorSpeed, isAlive } from './actor.ts';
@@ -53,4 +55,68 @@ function projectNextTurn(actor: Actor): Actor | null {
     ...actor,
     nextActTick: addTicks(actor.nextActTick, actionDelay(actor.intent.weight, actorSpeed(actor))),
   };
+}
+
+export interface PreviewHit {
+  readonly target: ActorId;
+  readonly amount: number;
+}
+
+/**
+ * What an action would do, if taken now. Everything the hover state needs, and
+ * nothing the UI has to work out for itself (GDD §15: the player should never do
+ * multiplication in their head).
+ */
+export interface ActionPreview {
+  /** The queue as it would then unfold. */
+  readonly queue: readonly QueueSlot[];
+  /** Damage the action would deal, by target. */
+  readonly hits: readonly PreviewHit[];
+  /** When the player would next act. */
+  readonly playerNextTick: Tick | null;
+  /** How many enemy turns land before that. */
+  readonly enemyTurnsBeforePlayer: number;
+  /** What those turns would cost, at their telegraphed damage. */
+  readonly incomingDamage: number;
+}
+
+/**
+ * The ghost preview (GDD §4.2) — the core UX of the entire game.
+ *
+ * It runs the **real reducer** on a copy and reads the result. There is
+ * deliberately no estimator here: a preview that could disagree with the commit
+ * would destroy the one promise the queue makes. Returns null for an action the
+ * reducer would refuse, since there is nothing honest to show.
+ */
+export function previewAction(state: CombatState, action: Action): ActionPreview | null {
+  const result = reduce(state, action);
+  if (!result.ok) return null;
+
+  const projected = result.step.state;
+  const queue = forecastQueue(projected);
+
+  // "Before the player" is a question about queue *order*, not about tick
+  // numbers: an actor sharing the player's tick still acts first if it wins the
+  // Speed tie-break (GDD §4.1). Counting by tick silently under-reported that.
+  const playerIndex = queue.findIndex((slot) => isPlayerSlot(projected, slot));
+  const playerNextTick = playerIndex === -1 ? null : (queue[playerIndex]?.at ?? null);
+  const before = playerIndex === -1 ? queue : queue.slice(0, playerIndex);
+
+  return {
+    queue,
+    hits: result.step.events
+      .filter((event) => event.kind === 'damage_dealt')
+      .map((event) => ({ target: event.target, amount: event.amount })),
+    playerNextTick,
+    enemyTurnsBeforePlayer: before.length,
+    incomingDamage: before.reduce((total, slot) => total + intentDamage(projected, slot), 0),
+  };
+}
+
+function isPlayerSlot(state: CombatState, slot: QueueSlot): boolean {
+  return findActor(state, slot.actor)?.side === 'player';
+}
+
+function intentDamage(state: CombatState, slot: QueueSlot): number {
+  return findActor(state, slot.actor)?.intent?.damage ?? 0;
 }

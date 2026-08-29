@@ -8,6 +8,7 @@ import { LAYOUT } from './theme.ts';
 export interface HandOptions {
   readonly scene: Phaser.Scene;
   readonly onPlay: (card: CardDefinition) => void;
+  readonly onHover: (card: CardDefinition | null) => void;
 }
 
 /**
@@ -16,13 +17,11 @@ export interface HandOptions {
  * from a point below the screen, as if looked down at.
  */
 export class Hand {
-  private readonly scene: Phaser.Scene;
-  private readonly onPlay: (card: CardDefinition) => void;
+  private readonly options: HandOptions;
   private faces: CardFace[] = [];
 
   constructor(options: HandOptions) {
-    this.scene = options.scene;
-    this.onPlay = options.onPlay;
+    this.options = options;
   }
 
   render(state: CombatState): void {
@@ -37,7 +36,12 @@ export class Hand {
     const middle = (cards.length - 1) / 2;
 
     this.faces = cards.map((card, index) => {
-      const face = new CardFace({ scene: this.scene, card, onPlay: this.onPlay });
+      const face = new CardFace({
+        scene: this.options.scene,
+        card,
+        onPlay: this.options.onPlay,
+        onHover: this.options.onHover,
+      });
       const fromCenter = index - middle;
       face.view.setPosition(
         LAYOUT.width / 2 + fromCenter * step,
