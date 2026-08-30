@@ -17,6 +17,10 @@ of M0 is whatever the answers say, including "stop".
 npm run dev        # http://localhost:5173
 ```
 
+Or play the deployed build at **<https://alutsu.github.io/project-cadence/>**,
+which is what to hand the outsider — asking someone to clone a repo and start a
+dev server changes what is being tested.
+
 Optional: `?seed=6` replays an exact shuffle. The seed in use is shown next to
 the encounter name, so any hand worth talking about can be reproduced later.
 
