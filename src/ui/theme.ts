@@ -55,3 +55,23 @@ export const LAYOUT = {
   piles: { top: 380 },
   hud: { margin: 48 },
 } as const;
+
+/**
+ * Presentation timing, in **milliseconds** — never Tick (CLAUDE.md §2.3). None
+ * of this reaches the sim: every outcome an animation shows is already true in
+ * the state before the tween starts, so skipping one changes how fast a result
+ * is read and never what the result is (GDD §15).
+ */
+export const FX = {
+  /** The played card travelling from the hand to the enemy it hits. */
+  throwMs: 210,
+  /** How far the struck silhouette recoils, and for how long. */
+  recoilPixels: 16,
+  recoilMs: 80,
+  /** The damage figure rising off the enemy. */
+  riseMs: 640,
+  risePixels: 44,
+  /** The ring that marks the landing point, as a fraction of the enemy box. */
+  ringScale: 1.35,
+  ringMs: 320,
+} as const;

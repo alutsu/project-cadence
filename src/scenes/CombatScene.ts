@@ -6,20 +6,24 @@ import { isAlive } from '../sim/actor.ts';
 import type { CardDefinition } from '../sim/card.ts';
 import { advanceToDecision, reduce, startCombat } from '../sim/combat.ts';
 import { previewAction } from '../sim/forecast.ts';
-import { cardId, type ActorId } from '../sim/ids.ts';
+import { cardId, type ActorId, type CardId } from '../sim/ids.ts';
 import { createRng } from '../sim/rng.ts';
 import { DEFAULT_RULES, ULTIMATE_RULES, type CombatRules } from '../sim/rules.ts';
 import { tick } from '../sim/tick.ts';
 import { hasPlayableCard } from '../sim/piles.ts';
 import { findActor, type CombatState } from '../sim/state.ts';
+import { findCard } from '../sim/card.ts';
+import type { CombatEvent } from '../sim/events.ts';
 import { ActionBar } from '../ui/ActionBar.ts';
+import { CombatFx } from '../ui/CombatFx.ts';
 import { DeathScreen, type DeathReport } from '../ui/DeathScreen.ts';
 import { EncounterBanner } from '../ui/EncounterBanner.ts';
-import { EnemyLine } from '../ui/EnemyLine.ts';
-import { Hand } from '../ui/Hand.ts';
+import { EnemyLine, enemySeat } from '../ui/EnemyLine.ts';
+import { Hand, handSeat } from '../ui/Hand.ts';
 import { PilesPanel } from '../ui/PilesPanel.ts';
 import { PreviewReadout } from '../ui/PreviewReadout.ts';
 import { SessionLog } from '../ui/SessionLog.ts';
+import { Sfx } from '../ui/Sfx.ts';
 import { TuningPanel } from '../ui/TuningPanel.ts';
 import { QueueStrip } from '../ui/QueueStrip.ts';
 import { COLORS } from '../ui/theme.ts';
@@ -34,6 +38,7 @@ interface CombatViews {
   readonly banner: EncounterBanner;
   readonly tuning: TuningPanel;
   readonly death: DeathScreen;
+  readonly fx: CombatFx;
 }
 
 /**
@@ -50,6 +55,7 @@ export class CombatScene extends Phaser.Scene {
   private rules: CombatRules = DEFAULT_RULES;
   private animations = true;
   private readonly session = new SessionLog();
+  private readonly sfx = new Sfx();
   private state: CombatState = openingState({ index: 0, rules: DEFAULT_RULES, hp: PLAYER_MAX_HP });
   private target: ActorId | null = null;
   private views: CombatViews | null = null;
@@ -101,6 +107,8 @@ export class CombatScene extends Phaser.Scene {
       piles: new PilesPanel(this),
       banner: new EncounterBanner(this),
       tuning: new TuningPanel(this),
+      // Transient hits sit above the board and below the death screen.
+      fx: new CombatFx(this),
       // Built last so it draws over everything it covers.
       death: new DeathScreen(this),
     };
@@ -110,6 +118,8 @@ export class CombatScene extends Phaser.Scene {
     // Once an encounter is over the cards are inert, so a click anywhere is
     // unambiguous: it means "next".
     this.input.on(Phaser.Input.Events.POINTER_DOWN, () => {
+      // Browsers only hand over an audio context inside a real gesture.
+      this.sfx.unlock();
       if (!this.dismissArmed) return;
       this.advanceEncounter();
     });
@@ -219,6 +229,10 @@ export class CombatScene extends Phaser.Scene {
       this.animations = !this.animations;
       this.renderAll();
     });
+    keys.on('keydown-S', () => {
+      this.sfx.setMuted(!this.sfx.isMuted());
+      this.renderAll();
+    });
     keys.on('keydown-R', () => {
       this.restart();
     });
@@ -271,6 +285,7 @@ export class CombatScene extends Phaser.Scene {
     const result = reduce(this.state, action);
     if (!result.ok) return;
 
+    const before = this.state;
     const advanced = advanceToDecision(result.step.state);
     const events = [...result.step.events, ...advanced.events];
     const wasOngoing = this.state.outcome === 'ongoing';
@@ -284,11 +299,84 @@ export class CombatScene extends Phaser.Scene {
     }
     this.renderAll();
 
-    // Animations never change a result — they only show one (GDD §15).
-    if (!this.animations) return;
+    this.playFx(before, events);
+  }
+
+  /**
+   * Sound and motion for what has already happened. Every value here is read
+   * out of the event log after the reducer ran, so nothing this method does can
+   * change an outcome — which is what makes skipping it safe (GDD §15).
+   *
+   * Seats come from the state *before* the action: a killed enemy has already
+   * left the line by now, and its blow should still land where it stood.
+   */
+  private playFx(before: CombatState, events: readonly CombatEvent[]): void {
+    const views = this.views;
+    if (views === null) return;
+
+    const died = new Set(
+      events.filter((event) => event.kind === 'actor_died').map((event) => event.actor),
+    );
+
     for (const event of events) {
-      if (event.kind === 'staggered') this.views?.queue.flashStagger(event.actor, event.delay);
+      if (event.kind === 'card_played' && event.actor === PLAYER) {
+        this.playedCardFx(before, event.card);
+        continue;
+      }
+      if (event.kind === 'waited') {
+        this.sfx.guard();
+        continue;
+      }
+      if (event.kind === 'damage_dealt') {
+        this.sfx.impact(event.amount);
+        this.landedBlowFx(before, {
+          target: event.target,
+          amount: event.amount,
+          lethal: died.has(event.target),
+        });
+        continue;
+      }
+      if (event.kind === 'staggered') {
+        this.staggerFx(event.actor, event.delay);
+        continue;
+      }
+      if (event.kind === 'actor_died') this.sfx.death();
     }
+  }
+
+  private staggerFx(actor: ActorId, delay: number): void {
+    this.sfx.stagger();
+    if (this.animations) this.views?.queue.flashStagger(actor, delay);
+  }
+
+  private playedCardFx(before: CombatState, card: CardId): void {
+    const definition = findCard(before.catalogue, card);
+    if (definition === undefined) return;
+    this.sfx.strike(definition.weightClass);
+
+    const index = before.hand.indexOf(card);
+    const target = this.target;
+    if (!this.animations || index === -1 || target === null) return;
+
+    const to = enemySeat(before, target);
+    if (to === null) return;
+    this.views?.fx.strike({
+      from: handSeat({ index, count: before.hand.length }),
+      to,
+      name: definition.name.toUpperCase(),
+    });
+  }
+
+  private landedBlowFx(before: CombatState, blow: LandedBlow): void {
+    if (!this.animations) return;
+
+    const at = enemySeat(before, blow.target);
+    // The player has no silhouette to hang a figure on (GDD §15.1), so an
+    // incoming blow is heard rather than drawn.
+    if (at === null) return;
+
+    this.views?.fx.impact({ at, amount: blow.amount, lethal: blow.lethal });
+    this.views?.enemies.flashHit(blow.target);
   }
 
   /** GDD §4.8: the target persists, and killing it advances to the next enemy. */
@@ -321,7 +409,7 @@ export class CombatScene extends Phaser.Scene {
       `${encounterAt(this.encounterIndex).teaches}   ·   ${this.chainLabel()}   ·   seed ${String(SESSION_SEED)}`,
       this.state.outcome === 'won' ? this.endOfEncounterSummary() : '',
     );
-    views.tuning.render(this.rules, this.animations);
+    views.tuning.render(this.rules, { animations: this.animations, sound: !this.sfx.isMuted() });
     if (this.state.outcome === 'lost') views.death.show(this.deathReport());
     else views.death.hide();
     this.armAutoWait();
@@ -425,6 +513,7 @@ export class CombatScene extends Phaser.Scene {
     const views = this.views;
     if (views === null) return;
 
+    views.fx.destroy();
     views.death.destroy();
     views.queue.destroy();
     views.enemies.destroy();
@@ -438,8 +527,16 @@ export class CombatScene extends Phaser.Scene {
     this.input.keyboard?.removeAllListeners();
     this.autoWait?.remove();
     this.autoWait = null;
+    this.sfx.destroy();
     this.views = null;
   }
+}
+
+/** One blow that has already landed, ready to be drawn. */
+interface LandedBlow {
+  readonly target: ActorId;
+  readonly amount: number;
+  readonly lethal: boolean;
 }
 
 /** GDD §4.3: the beat before Wait is taken for the player. */

@@ -7,9 +7,19 @@ const KEYS = [
   'G / H  guard cap −/+',
   'J / K  guard decay −/+',
   'W  wait weight',
-  'A  animations',
+  'A  animations   S  sound',
   'R  restart   N  next fight',
 ] as const;
+
+/** What the presentation switches are currently set to. */
+export interface PresentationState {
+  readonly animations: boolean;
+  readonly sound: boolean;
+}
+
+function onOff(on: boolean): string {
+  return on ? 'on' : 'off';
+}
 
 /**
  * The tuning console (docs/M0_PLAN.md §4, S8). A solo developer cannot chase a
@@ -22,8 +32,6 @@ export class TuningPanel {
   private visible = false;
 
   constructor(scene: Phaser.Scene) {
-    // The clear band to the right of the enemies: nothing the player needs
-    // during a fight lives there.
     // The clear band to the right of the enemies: nothing the player needs
     // during a fight lives there.
     const x = LAYOUT.width - 560;
@@ -48,14 +56,14 @@ export class TuningPanel {
     return this.visible;
   }
 
-  render(rules: CombatRules, animations: boolean): void {
+  render(rules: CombatRules, output: PresentationState): void {
     this.lines.setText(
       [
         `ultimate    ${rules.ultimate}`,
         `            ${ULTIMATE_RULE_NOTES[rules.ultimate]}`,
         `guard       cap ${String(rules.guardCap)}   decay ${String(rules.guardDecayPerTick)}/tick`,
         `wait        W${String(rules.waitWeight)}   +${String(rules.waitGuard)} guard`,
-        `animations  ${animations ? 'on' : 'off'}`,
+        `animations  ${onOff(output.animations)}   sound  ${onOff(output.sound)}`,
       ].join('\n'),
     );
   }

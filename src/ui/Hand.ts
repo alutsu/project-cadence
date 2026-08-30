@@ -16,6 +16,25 @@ export interface HandOptions {
  * (GDD §15.1). The tilt and lift are the whole "first person" trick — cards fan
  * from a point below the screen, as if looked down at.
  */
+export interface HandSeat {
+  readonly index: number;
+  readonly count: number;
+}
+
+/**
+ * Where the nth card of a hand sits. Exported because the strike animation has
+ * to leave from the card the player actually clicked — if it computed its own
+ * position the two would drift apart the moment the fan changes.
+ */
+export function handSeat({ index, count }: HandSeat): { readonly x: number; readonly y: number } {
+  const { cardWidth, gap, baselineY, lift } = LAYOUT.hand;
+  const fromCenter = index - (count - 1) / 2;
+  return {
+    x: LAYOUT.width / 2 + fromCenter * (cardWidth + gap),
+    y: baselineY + Math.abs(fromCenter) * lift,
+  };
+}
+
 export class Hand {
   private readonly options: HandOptions;
   private faces: CardFace[] = [];
@@ -31,8 +50,7 @@ export class Hand {
       .map((id) => findCard(state.catalogue, id))
       .filter((card): card is CardDefinition => card !== undefined);
 
-    const { cardWidth, gap, baselineY, tiltDegrees, lift } = LAYOUT.hand;
-    const step = cardWidth + gap;
+    const { tiltDegrees } = LAYOUT.hand;
     const middle = (cards.length - 1) / 2;
 
     this.faces = cards.map((card, index) => {
@@ -42,12 +60,9 @@ export class Hand {
         onPlay: this.options.onPlay,
         onHover: this.options.onHover,
       });
-      const fromCenter = index - middle;
-      face.view.setPosition(
-        LAYOUT.width / 2 + fromCenter * step,
-        baselineY + Math.abs(fromCenter) * lift,
-      );
-      face.view.setAngle(fromCenter * tiltDegrees);
+      const seat = handSeat({ index, count: cards.length });
+      face.view.setPosition(seat.x, seat.y);
+      face.view.setAngle((index - middle) * tiltDegrees);
       return face;
     });
   }

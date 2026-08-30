@@ -38,10 +38,23 @@ of a chain is fought on whatever the first two left you.
 | `J` / `K` | Guard decay down / up |
 | `W` | cycle Wait's Weight |
 | `A` | animations on / off |
+| `S` | sound on / off |
 | `R` | restart this fight · `N` next fight (whole, for isolated reading) |
 
 Every tuning change restarts the encounter: rules live in combat state, so a
 half-changed fight would not be a fair reading.
+
+### On the sound
+
+There are no audio files in the repo — every sound is synthesised from an
+oscillator, which keeps GDD §15.1's budget intact. **A strike's pitch falls with
+its Weight class**: Light is high and quick, Ultimate is low and long. That is
+deliberate rather than decorative, and it is worth listening for during the
+hour. If a Heavy card does not *sound* expensive, pillar P1 is being carried by
+the numbers alone.
+
+`S` mutes it. Play some of the hour muted: if the queue stops reading without
+sound, the sound is compensating for something the strip should be saying.
 
 ### What the bots say it should feel like
 

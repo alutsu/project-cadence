@@ -3,11 +3,39 @@ import { currentIntent, isAlive, type Actor } from '../sim/actor.ts';
 import type { ActorId } from '../sim/ids.ts';
 import type { CombatState } from '../sim/state.ts';
 import { describeStatuses } from './statusText.ts';
-import { COLORS, ENEMY_INK, FONT, GUARD_INK, INK, LAYOUT, MUTED, TYPE } from './theme.ts';
+import { COLORS, ENEMY_INK, FONT, FX, GUARD_INK, INK, LAYOUT, MUTED, TYPE } from './theme.ts';
 
 export interface EnemyLineOptions {
   readonly scene: Phaser.Scene;
   readonly onTarget: (actor: ActorId) => void;
+}
+
+/** The living enemies, in the order they are drawn. */
+export function livingEnemies(state: CombatState): readonly Actor[] {
+  return state.actors.filter((actor) => actor.side === 'enemy' && isAlive(actor));
+}
+
+/**
+ * Where an enemy stands, or null if it is not on screen. Exported so a hit can
+ * be drawn at the silhouette it belongs to — including one that has just died
+ * and is therefore gone from the line by the time the animation plays.
+ */
+export function enemySeat(
+  state: CombatState,
+  actor: ActorId,
+): { readonly x: number; readonly y: number } | null {
+  const enemies = livingEnemies(state);
+  const index = enemies.findIndex((enemy) => enemy.id === actor);
+  if (index === -1) return null;
+
+  const { width, gap, centerY } = LAYOUT.enemies;
+  const fromCenter = index - (enemies.length - 1) / 2;
+  return { x: LAYOUT.width / 2 + fromCenter * (width + gap), y: centerY };
+}
+
+interface Silhouette {
+  readonly actor: ActorId;
+  readonly view: Phaser.GameObjects.Container;
 }
 
 /**
@@ -17,6 +45,7 @@ export interface EnemyLineOptions {
  */
 export class EnemyLine {
   private readonly container: Phaser.GameObjects.Container;
+  private silhouettes: Silhouette[] = [];
 
   constructor(private readonly options: EnemyLineOptions) {
     this.container = options.scene.add.container(0, 0);
@@ -24,15 +53,28 @@ export class EnemyLine {
 
   render(state: CombatState, targeted: ActorId | null): void {
     this.container.removeAll(true);
+    this.silhouettes = [];
 
-    const enemies = state.actors.filter((actor) => actor.side === 'enemy' && isAlive(actor));
-    const { width, gap } = LAYOUT.enemies;
-    const step = width + gap;
-    const middle = (enemies.length - 1) / 2;
+    for (const enemy of livingEnemies(state)) {
+      const seat = enemySeat(state, enemy.id);
+      if (seat === null) continue;
+      const view = this.silhouette(enemy, seat.x, enemy.id === targeted);
+      this.container.add(view);
+      this.silhouettes.push({ actor: enemy.id, view });
+    }
+  }
 
-    enemies.forEach((enemy, index) => {
-      const x = LAYOUT.width / 2 + (index - middle) * step;
-      this.container.add(this.silhouette(enemy, x, enemy.id === targeted));
+  /** A struck enemy recoils. Survivors only — the dead are no longer drawn. */
+  flashHit(actor: ActorId): void {
+    const hit = this.silhouettes.find((candidate) => candidate.actor === actor);
+    if (hit === undefined) return;
+
+    this.options.scene.tweens.add({
+      targets: hit.view,
+      x: hit.view.x + FX.recoilPixels,
+      duration: FX.recoilMs,
+      yoyo: true,
+      ease: 'Quad.easeOut',
     });
   }
 
