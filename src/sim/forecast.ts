@@ -3,7 +3,7 @@ import type { Actor, Intent } from './actor.ts';
 import { reduce } from './combat.ts';
 import type { ActorId } from './ids.ts';
 import { actionDelay } from './speed.ts';
-import { findActor, type CombatState } from './state.ts';
+import { findActor, type CombatOutcome, type CombatState } from './state.ts';
 import { nextToAct } from './timeline.ts';
 import { addTicks, tick, type Tick } from './tick.ts';
 import { actorSpeed, currentIntent, isAlive, nextIntentIndex } from './actor.ts';
@@ -124,6 +124,12 @@ export interface ActionPreview {
   readonly incomingDamage: number;
   /** Enemies this action would stagger, and by how much (GDD §4.6). */
   readonly staggers: readonly StaggerPreview[];
+  /**
+   * What the action would leave the encounter as. A lethal card ends the fight
+   * on the player's own turn, so `playerNextTick` names a tick that will never
+   * arrive — the UI needs this to say so rather than reading the tick out loud.
+   */
+  readonly outcome: CombatOutcome;
 }
 
 export interface StaggerPreview {
@@ -164,6 +170,7 @@ export function previewAction(state: CombatState, action: Action): ActionPreview
     staggers: result.step.events
       .filter((event) => event.kind === 'staggered')
       .map((event) => ({ actor: event.actor, delay: event.delay })),
+    outcome: projected.outcome,
   };
 }
 

@@ -52,6 +52,11 @@ export class Hand {
     });
   }
 
+  /** Puts the cards down. A finished encounter has nothing left to play. */
+  hide(): void {
+    this.clear();
+  }
+
   destroy(): void {
     this.clear();
   }

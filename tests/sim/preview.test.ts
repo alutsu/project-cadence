@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { m0Catalogue } from '../../src/data/cards.ts';
-import { ratAndWarden } from '../../src/data/encounters.ts';
+import { RAT, ratAndWarden, soloRat } from '../../src/data/encounters.ts';
 import type { Action } from '../../src/sim/actions.ts';
 import { advanceToDecision, reduce, startCombat, type ActorSeed } from '../../src/sim/combat.ts';
 import type { CombatEvent } from '../../src/sim/events.ts';
@@ -191,5 +191,33 @@ describe('what the preview tells the player (GDD §4.2, §15)', () => {
     expect(waiting.playerNextTick).toBe(9);
     expect(waiting.enemyTurnsBeforePlayer).toBe(1);
     expect(waiting.incomingDamage).toBe(1);
+  });
+
+  it('reports that a lethal card ends the encounter, not the tick it would buy', () => {
+    // The *last* enemy: killing one of two only advances the target (GDD §4.8).
+    const opened = advanceToDecision(
+      startCombat({
+        actors: soloRat(),
+        catalogue: CATALOGUE,
+        deck: [cardId('crush')],
+        rng: createRng(1, 'combat'),
+      }).state,
+    ).state;
+
+    const frail = {
+      ...opened,
+      actors: opened.actors.map((actor) => (actor.id === RAT ? { ...actor, hp: 1 } : actor)),
+    };
+
+    const lethal = previewAction(frail, { kind: 'play', card: cardId('crush'), target: RAT });
+    if (lethal === null) throw new Error('crush should be legal');
+
+    // The player is still scheduled — they simply never get there, because the
+    // last enemy dies on their own turn. Only `outcome` can say that.
+    expect(lethal.outcome).toBe('won');
+    expect(lethal.playerNextTick).not.toBeNull();
+
+    const survivable = previewAction(opened, { kind: 'play', card: cardId('crush'), target: RAT });
+    expect(survivable?.outcome).toBe('ongoing');
   });
 });

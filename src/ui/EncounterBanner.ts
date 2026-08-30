@@ -31,6 +31,7 @@ export class EncounterBanner {
         fontFamily: FONT,
         fontSize: TYPE.hud,
         color: PLAYER_INK,
+        align: 'center',
       })
       .setOrigin(0.5, 0.5);
   }

@@ -44,4 +44,55 @@ describe('session instrumentation', () => {
 
     expect(log.totals([STRIKE]).neverPlayed).toEqual([]);
   });
+
+  it('counts damage over time, which lands without a blow (GDD §4.5)', () => {
+    const log = new SessionLog();
+    log.record(
+      [
+        { kind: 'damage_dealt', at: tick(12), source: RAT, target: PLAYER, amount: 3 },
+        { kind: 'status_proc', at: tick(17), actor: PLAYER, status: 'poison', amount: 4 },
+        // Someone else's Poison is not the player's problem.
+        { kind: 'status_proc', at: tick(17), actor: RAT, status: 'poison', amount: 9 },
+      ],
+      PLAYER,
+    );
+
+    expect(log.totals([]).damageTaken).toBe(7);
+  });
+
+  it('names what last hurt the player, so a death screen can say it', () => {
+    const log = new SessionLog();
+    expect(log.lastHarm()).toBeNull();
+
+    log.record(
+      [{ kind: 'damage_dealt', at: tick(12), source: RAT, target: PLAYER, amount: 3 }],
+      PLAYER,
+    );
+    expect(log.lastHarm()).toEqual({ kind: 'blow', source: RAT, amount: 3 });
+
+    // A status finishing the job overwrites the blow that came before it.
+    log.record(
+      [{ kind: 'status_proc', at: tick(17), actor: PLAYER, status: 'poison', amount: 4 }],
+      PLAYER,
+    );
+    expect(log.lastHarm()).toEqual({ kind: 'status', status: 'poison', amount: 4 });
+  });
+
+  it('starts the next attempt at the set from nothing', () => {
+    const log = new SessionLog();
+    log.record(EVENTS, PLAYER);
+    log.encounterFinished();
+    log.reset();
+
+    const totals = log.totals([STRIKE, CRUSH]);
+    expect(totals).toMatchObject({
+      encounters: 0,
+      cardsPlayed: 0,
+      waits: 0,
+      staggers: 0,
+      damageTaken: 0,
+    });
+    expect(totals.neverPlayed).toEqual([STRIKE, CRUSH]);
+    expect(log.lastHarm()).toBeNull();
+  });
 });

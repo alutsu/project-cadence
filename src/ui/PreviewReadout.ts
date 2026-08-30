@@ -38,12 +38,7 @@ export class PreviewReadout {
       return;
     }
 
-    const landing =
-      preview.playerNextTick === null
-        ? 'the encounter ends'
-        : `you act at t${String(preview.playerNextTick)}`;
-    this.headline.setText(`${label} — ${landing}`).setColor(PLAYER_INK);
-
+    this.headline.setText(`${label} — ${landingOf(preview)}`).setColor(PLAYER_INK);
     const dealt = preview.hits.reduce((total, hit) => total + hit.amount, 0);
     const parts = [
       `${String(preview.enemyTurnsBeforePlayer)} enemy ${plural(preview.enemyTurnsBeforePlayer)} first`,
@@ -59,10 +54,27 @@ export class PreviewReadout {
       .setColor(staggerInk(preview.staggers.length, preview.incomingDamage));
   }
 
+  /** Nothing to hover once the fight is over. */
+  hide(): void {
+    this.headline.setText('');
+    this.detail.setText('');
+  }
+
   destroy(): void {
     this.headline.destroy();
     this.detail.destroy();
   }
+}
+
+/**
+ * A lethal card ends the fight on the player's own turn, so the tick it would
+ * put them on never arrives. Saying "you act at t48" there is a lie the queue
+ * cannot afford (P3) — the fight is what the player is choosing about.
+ */
+function landingOf(preview: ActionPreview): string {
+  if (preview.outcome !== 'ongoing') return 'the encounter ends';
+  if (preview.playerNextTick === null) return 'the encounter ends';
+  return `you act at t${String(preview.playerNextTick)}`;
 }
 
 function plural(turns: number): string {

@@ -13,6 +13,7 @@ import { tick } from '../sim/tick.ts';
 import { hasPlayableCard } from '../sim/piles.ts';
 import { findActor, type CombatState } from '../sim/state.ts';
 import { ActionBar } from '../ui/ActionBar.ts';
+import { DeathScreen, type DeathReport } from '../ui/DeathScreen.ts';
 import { EncounterBanner } from '../ui/EncounterBanner.ts';
 import { EnemyLine } from '../ui/EnemyLine.ts';
 import { Hand } from '../ui/Hand.ts';
@@ -32,6 +33,7 @@ interface CombatViews {
   readonly piles: PilesPanel;
   readonly banner: EncounterBanner;
   readonly tuning: TuningPanel;
+  readonly death: DeathScreen;
 }
 
 /**
@@ -52,6 +54,14 @@ export class CombatScene extends Phaser.Scene {
   private target: ActorId | null = null;
   private views: CombatViews | null = null;
   private autoWait: Phaser.Time.TimerEvent | null = null;
+  /**
+   * Whether a click may dismiss a finished encounter. The click that lands the
+   * killing blow must not also clear the screen reporting it — pointer-down
+   * plays the card, the outcome changes inside that same event, and the global
+   * handler would then advance on the very press that caused the death. Armed
+   * on release, so dismissing always takes a second, deliberate click.
+   */
+  private dismissArmed = false;
 
   constructor() {
     super('Combat');
@@ -91,6 +101,8 @@ export class CombatScene extends Phaser.Scene {
       piles: new PilesPanel(this),
       banner: new EncounterBanner(this),
       tuning: new TuningPanel(this),
+      // Built last so it draws over everything it covers.
+      death: new DeathScreen(this),
     };
 
     this.installTuningKeys();
@@ -98,7 +110,11 @@ export class CombatScene extends Phaser.Scene {
     // Once an encounter is over the cards are inert, so a click anywhere is
     // unambiguous: it means "next".
     this.input.on(Phaser.Input.Events.POINTER_DOWN, () => {
+      if (!this.dismissArmed) return;
       this.advanceEncounter();
+    });
+    this.input.on(Phaser.Input.Events.POINTER_UP, () => {
+      this.dismissArmed = this.state.outcome !== 'ongoing';
     });
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
@@ -156,6 +172,8 @@ export class CombatScene extends Phaser.Scene {
     if (this.state.outcome === 'lost') {
       this.encounterIndex = 0;
       this.enteringHp = PLAYER_MAX_HP;
+      // The death screen has been read by now; the next attempt counts fresh.
+      this.session.reset();
       this.restart();
       return;
     }
@@ -224,6 +242,7 @@ export class CombatScene extends Phaser.Scene {
   }
 
   private restart(): void {
+    this.dismissArmed = false;
     this.state = openingState({
       index: this.encounterIndex,
       rules: this.rules,
@@ -259,7 +278,10 @@ export class CombatScene extends Phaser.Scene {
     this.state = advanced.state;
     this.target = this.currentTarget();
     this.session.record(events, PLAYER);
-    if (wasOngoing && this.state.outcome !== 'ongoing') this.session.encounterFinished();
+    if (wasOngoing && this.state.outcome !== 'ongoing') {
+      this.session.encounterFinished();
+      this.dismissArmed = false;
+    }
     this.renderAll();
 
     // Animations never change a result — they only show one (GDD §15).
@@ -283,18 +305,25 @@ export class CombatScene extends Phaser.Scene {
     const views = this.views;
     if (views === null) return;
 
+    const over = this.state.outcome !== 'ongoing';
     views.queue.render(this.state);
     views.enemies.render(this.state, this.target);
-    views.hand.render(this.state);
+    // The cards are inert once the fight is over, and the summary needs the
+    // room they occupy.
+    if (over) views.hand.hide();
+    else views.hand.render(this.state);
     views.bar.render(this.state);
-    views.readout.render('', null);
+    if (over) views.readout.hide();
+    else views.readout.render('', null);
     views.piles.render(this.state);
     views.banner.render(
       encounterAt(this.encounterIndex).name,
       `${encounterAt(this.encounterIndex).teaches}   ·   ${this.chainLabel()}   ·   seed ${String(SESSION_SEED)}`,
-      this.state.outcome === 'ongoing' ? '' : this.endOfEncounterSummary(),
+      this.state.outcome === 'won' ? this.endOfEncounterSummary() : '',
     );
     views.tuning.render(this.rules, this.animations);
+    if (this.state.outcome === 'lost') views.death.show(this.deathReport());
+    else views.death.hide();
     this.armAutoWait();
   }
 
@@ -347,6 +376,40 @@ export class CombatScene extends Phaser.Scene {
     ].join('\n');
   }
 
+  /**
+   * GDD §13, reduced to what M0 holds. Every line is read off the session log
+   * or the encounter data — the screen formats, it does not count.
+   */
+  private deathReport(): DeathReport {
+    const totals = this.session.totals(Object.keys(this.state.catalogue).map(cardId));
+    const encounter = encounterAt(this.encounterIndex);
+    const position = this.encounterIndex + 1;
+
+    return {
+      cause: this.causeOfDeath(),
+      reached: `fell on fight ${String(position)} of ${String(ENCOUNTERS.length)} — ${encounter.name}`,
+      played:
+        `${String(totals.cardsPlayed)} cards · ${String(totals.waits)} waits · ` +
+        `${String(totals.staggers)} staggers · ${String(totals.damageTaken)} damage taken`,
+      unplayed:
+        totals.neverPlayed.length === 0
+          ? 'you played every card in the deck'
+          : `never played: ${totals.neverPlayed.join(', ')}`,
+      seed: `seed ${String(SESSION_SEED)}`,
+    };
+  }
+
+  /** Names the blow or the status that finished the run (GDD §13). */
+  private causeOfDeath(): string {
+    const harm = this.session.lastHarm();
+    if (harm === null) return 'killed by something the log did not see';
+    if (harm.kind === 'status') {
+      return `${harm.status} finished you for ${String(harm.amount)}`;
+    }
+    const name = findActor(this.state, harm.source)?.name ?? 'something';
+    return `${name} finished you for ${String(harm.amount)}`;
+  }
+
   /** What you take into the next fight — the whole point of §4.10. */
   private carryLine(): string {
     if (this.state.outcome === 'lost') return 'the set restarts from the first fight';
@@ -362,6 +425,7 @@ export class CombatScene extends Phaser.Scene {
     const views = this.views;
     if (views === null) return;
 
+    views.death.destroy();
     views.queue.destroy();
     views.enemies.destroy();
     views.hand.destroy();
