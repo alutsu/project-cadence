@@ -4,6 +4,7 @@ import type { CombatEvent } from '../sim/events.ts';
 import { formatEvent } from './format.ts';
 import { greedyDamage } from './policy.ts';
 import { scenario } from './scenario.ts';
+import { gauntlet, sweep } from './sweep.ts';
 
 /**
  * Headless driver (GDD §19, CLAUDE.md §7.3). S1 runs one scripted encounter and
@@ -11,6 +12,7 @@ import { scenario } from './scenario.ts';
  * any of it could be seen on screen.
  */
 const DEFAULT_DECISIONS = 8;
+const DEFAULT_SEEDS = 200;
 
 function run(decisions: number): readonly CombatEvent[] {
   const started = startCombat(scenario());
@@ -33,7 +35,23 @@ function run(decisions: number): readonly CombatEvent[] {
 }
 
 function main(): void {
-  const { values } = parseArgs({ options: { decisions: { type: 'string' } } });
+  const { values } = parseArgs({
+    options: {
+      decisions: { type: 'string' },
+      sweep: { type: 'boolean' },
+      seeds: { type: 'string' },
+    },
+  });
+
+  if (values.sweep === true) {
+    const seeds = values.seeds === undefined ? DEFAULT_SEEDS : Number(values.seeds);
+    if (!Number.isInteger(seeds) || seeds <= 0) {
+      throw new RangeError(`--seeds must be a positive integer, received ${String(values.seeds)}`);
+    }
+    process.stdout.write(`${sweep(seeds)}\n${gauntlet(seeds)}\n`);
+    return;
+  }
+
   const requested = values.decisions === undefined ? DEFAULT_DECISIONS : Number(values.decisions);
   if (!Number.isInteger(requested) || requested <= 0) {
     throw new RangeError(

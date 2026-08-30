@@ -4,12 +4,13 @@ import { advanceToDecision, reduce, startCombat } from '../../src/sim/combat.ts'
 import type { CombatEvent } from '../../src/sim/events.ts';
 import { findActor, type CombatState } from '../../src/sim/state.ts';
 import { formatEvent } from '../../src/sim-harness/format.ts';
-import { HEAVY, LIGHT, PLAYER, RAT, scenario } from '../../src/sim-harness/scenario.ts';
+import { HEAVY, LIGHT, PLAYER, RAT, STANDARD, scenario } from '../../src/sim-harness/scenario.ts';
 
 const SCRIPT: readonly Action[] = [
   { kind: 'play', card: HEAVY, target: RAT },
   { kind: 'wait' },
   { kind: 'play', card: LIGHT, target: RAT },
+  { kind: 'play', card: STANDARD, target: RAT },
 ];
 
 interface Run {
@@ -61,7 +62,7 @@ describe('determinism (GDD §20.2, CLAUDE.md §7.2)', () => {
       // The rat is faster, so it opens; no coin flip (GDD §4.1).
       't5 turn rat',
       't5 intent rat Gnaw',
-      't5 damage rat -> player 3',
+      't5 damage rat -> player 2',
       't5 scheduled rat -> t9',
       't6 turn player',
       't6 no draw (draw_pile_empty)',
@@ -76,13 +77,13 @@ describe('determinism (GDD §20.2, CLAUDE.md §7.2)', () => {
       // The rat's rotation has advanced: the second intent carries Poison.
       't12 turn rat',
       't12 intent rat Venom Bite',
-      't12 damage rat -> player 2',
-      't12 poison player 4',
+      't12 damage rat -> player 1',
+      't12 poison player 2',
       't12 scheduled rat -> t16',
       // Both are due at t16; the rat is faster, so it bites first (GDD §4.1).
       't16 turn rat',
       't16 intent rat Gnaw',
-      't16 damage rat -> player 3',
+      't16 damage rat -> player 2',
       't16 scheduled rat -> t20',
       't16 turn player',
       't16 no draw (draw_pile_empty)',
@@ -92,16 +93,32 @@ describe('determinism (GDD §20.2, CLAUDE.md §7.2)', () => {
       't16 guard player +3',
       't16 scheduled player -> t19',
       // Poison runs on its own five-tick clock and ignores Guard (GDD §4.5).
-      't17 poison player ticks 4',
+      't17 poison player ticks 2',
       't19 turn player',
       't19 no draw (draw_pile_empty)',
       't19 played player strike w4',
       't19 damage player -> rat 9',
-      't19 died rat',
+      // The second Stagger of the encounter, worth one tick less than the
+      // first — the ladder halving down toward its floor (GDD §4.6).
+      't19 staggered rat +2',
       't19 cooldown strike -> t27',
       't19 scheduled player -> t23',
+      // Poison ends by running out of magnitude, not on a clock (GDD §4.5).
+      't22 poison player ticks 1',
+      't22 turn rat',
+      't22 intent rat Venom Bite',
+      't22 damage rat -> player 1',
+      't22 poison player 2',
+      't22 scheduled rat -> t26',
+      't23 turn player',
+      't23 no draw (draw_pile_empty)',
+      't23 played player cleave w6',
+      't23 damage player -> rat 14',
+      't23 died rat',
+      't23 cooldown cleave -> t37',
+      't23 scheduled player -> t29',
       // The encounter closes only after the turn that ended it has resolved.
-      't19 combat_ended won',
+      't23 combat_ended won',
     ]);
   });
 
@@ -109,7 +126,7 @@ describe('determinism (GDD §20.2, CLAUDE.md §7.2)', () => {
     const { state } = play(SCRIPT);
 
     expect(state.outcome).toBe('won');
-    expect(findActor(state, PLAYER)?.hp).toBe(58);
+    expect(findActor(state, PLAYER)?.hp).toBe(61);
     expect(findActor(state, RAT)?.hp).toBe(0);
   });
 });

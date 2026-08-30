@@ -24,16 +24,16 @@ export const POISON_RAT: EnemyArchetype = {
   id: 'poison_rat',
   name: 'Poison Rat',
   baseSpeed: 130,
-  baseHp: 26,
+  baseHp: 34,
   basePoise: 7,
   intents: [
-    { name: 'Gnaw', weight: tick(4), damage: 3, applies: null },
+    { name: 'Gnaw', weight: tick(4), damage: 2, applies: null },
     {
       name: 'Venom Bite',
       weight: tick(5),
-      damage: 2,
+      damage: 1,
       // Poison ends by running out of magnitude, not on a clock (GDD §4.5).
-      applies: { kind: 'poison', magnitude: 4, duration: null },
+      applies: { kind: 'poison', magnitude: 2, duration: null },
     },
   ],
 };
@@ -43,11 +43,11 @@ export const WARDEN: EnemyArchetype = {
   id: 'warden',
   name: 'Warden',
   baseSpeed: 70,
-  baseHp: 52,
+  baseHp: 72,
   basePoise: 20,
   intents: [
-    { name: 'Ruinous Swing', weight: tick(16), damage: 18, applies: null },
-    { name: 'Backhand', weight: tick(6), damage: 7, applies: null },
+    { name: 'Ruinous Swing', weight: tick(16), damage: 11, applies: null },
+    { name: 'Backhand', weight: tick(6), damage: 3, applies: null },
   ],
 };
 
@@ -56,16 +56,16 @@ export const CHIME_ADEPT: EnemyArchetype = {
   id: 'chime_adept',
   name: 'Chime Adept',
   baseSpeed: 115,
-  baseHp: 34,
+  baseHp: 48,
   basePoise: 12,
   intents: [
     {
       name: 'Discordant Chime',
       weight: tick(6),
-      damage: 5,
+      damage: 3,
       applies: { kind: 'slow', magnitude: 25, duration: tick(18) },
     },
-    { name: 'Toll', weight: tick(8), damage: 11, applies: null },
+    { name: 'Toll', weight: tick(8), damage: 6, applies: null },
   ],
 };
 

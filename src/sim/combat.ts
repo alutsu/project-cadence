@@ -51,6 +51,12 @@ export interface ActorSeed {
   readonly side: Actor['side'];
   readonly baseSpeed: number;
   readonly maxHp: number;
+  /**
+   * Health on entering the encounter. Absent means full, which is every enemy
+   * and the first fight of a set; the player carries a wound forward between
+   * encounters instead (GDD §4.10).
+   */
+  readonly hp?: number;
   /** GDD §4.6. Zero means nothing staggers this actor — the player's case. */
   readonly poise: number;
   readonly intents: readonly Intent[];
@@ -112,7 +118,19 @@ function dealOpeningHand(start: CombatStep): CombatStep {
 
 const NO_SPEED_GAIN = 0;
 
+/** A seed that enters wounded must still be alive and within its pool. */
+function startingHp(seed: ActorSeed): number {
+  if (seed.hp === undefined) return seed.maxHp;
+  if (!Number.isInteger(seed.hp) || seed.hp <= 0 || seed.hp > seed.maxHp) {
+    throw new RangeError(
+      `actor "${seed.id}" entered with ${String(seed.hp)} HP, outside 1..${String(seed.maxHp)}`,
+    );
+  }
+  return seed.hp;
+}
+
 function seedActor(seed: ActorSeed, index: number): Actor {
+  const hp = startingHp(seed);
   return {
     id: seed.id,
     name: seed.name,
@@ -120,7 +138,7 @@ function seedActor(seed: ActorSeed, index: number): Actor {
     index,
     baseSpeed: seed.baseSpeed,
     speedGain: NO_SPEED_GAIN,
-    hp: seed.maxHp,
+    hp,
     maxHp: seed.maxHp,
     guard: 0,
     poise: seed.poise,

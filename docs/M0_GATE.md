@@ -1,6 +1,6 @@
 # M0 — The Gate
 
-**Status:** not yet run · **Build:** M0/S8 · **Traces to:** GDD §18 (M0 gate), §21 Risk 1
+**Status:** not yet run · **Build:** M0/S8 + difficulty pass · **Traces to:** GDD §18 (M0 gate), §21 Risk 1
 
 > Play it for an hour with no gems at all. If moving your position in the turn
 > queue isn't fun by itself, stop. The gem system will not save it — it will
@@ -21,7 +21,14 @@ Optional: `?seed=6` replays an exact shuffle. The seed in use is shown next to
 the encounter name, so any hand worth talking about can be reproduced later.
 
 Six encounters, in order, each isolating one system before the last asks for all
-of them at once. Clearing or losing one advances to the next on a click.
+of them at once. Clearing one advances to the next on a click; dying sends you
+back to the first.
+
+**HP carries between fights** (GDD §4.10), in chains of three with a full
+restore between them — M0's stand-in for §11's Sanctum. The banner names your
+position in the chain and where the next rest is. This is where the pressure
+lives: no individual fight is likely to kill you from full, but the third fight
+of a chain is fought on whatever the first two left you.
 
 | Key | |
 |---|---|
@@ -31,10 +38,27 @@ of them at once. Clearing or losing one advances to the next on a click.
 | `J` / `K` | Guard decay down / up |
 | `W` | cycle Wait's Weight |
 | `A` | animations on / off |
-| `R` | restart this fight · `N` next fight |
+| `R` | restart this fight · `N` next fight (whole, for isolated reading) |
 
 Every tuning change restarts the encounter: rules live in combat state, so a
 half-changed fight would not be a fair reading.
+
+### What the bots say it should feel like
+
+`npm run sim -- --sweep` replays the set with four scripted policies. None of
+them uses Guard or Stagger, so **read every number as a floor a competent human
+should beat**, not as the difficulty itself.
+
+| Policy | reaches |
+|---|---|
+| `leftmost` — plays hand slot 0, always | dies on fight 3, 90% of runs |
+| `greedy` — biggest damage in hand | dies on fight 3, 54% of runs |
+| `tempo` — best damage per tick of Weight | usually dies on fight 5 |
+| `focus` — tempo, and kills the weakest enemy first | usually dies on fight 6 |
+
+The gap between `leftmost` and `focus` is the whole claim under test: choosing
+which card and which target should be worth roughly six fights' difference. If
+play *feels* like it doesn't matter, that is a finding regardless of the table.
 
 ---
 
@@ -96,6 +120,14 @@ branches from `src/sim/combat.ts` and `src/sim/rules.ts`, and remove the `U` key
 ---
 
 ## 4. Also worth deciding while playing
+
+**Wait-spam against a single weak enemy is currently unkillable.** Wait grants
++3 Guard at Weight 3, and Guard decays 1/tick, so Waiting on a loop holds Guard
+at roughly 3 forever — enough to absorb a Poison Rat's whole bite. It falls
+apart against two enemies or any real hit, so it may be a non-issue. Watch for
+whether it is ever the *tempting* line; if it is, GDD §4.3 already names the
+lever (Wait's Weight, not its draw).
+
 
 These are the numbers the GDD itself flags as guesses. The tuning console exists
 so they can be chased inside the hour rather than between builds.

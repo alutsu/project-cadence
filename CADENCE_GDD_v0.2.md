@@ -6,6 +6,8 @@
 
 **What changed from v0.1:** two math errors corrected (§7.4 Weave floor, §6.1 HP economy), five missing systems specified (defense, status timing, targeting, the Wait action, the full economy), and the production sections a solo developer actually needs added (§15–§19). Changes are flagged **[FIX]** or **[NEW]**.
 
+**Amendment 2026-08-30 (flagged [AMD]):** the M0 feel pass found the encounter set unthreatening — spamming the leftmost card in hand cleared it without dying. Three causes, all recorded here: HP was not persisting between encounters as §4.10 requires (an implementation bug); fights ran 2–5 decisions against an eight-slot forecast, so there was no future to plan toward (§12.2); and multi-enemy encounters were composed as if a second enemy cost only its own HP (§12.2). §4.10 gains M0's Sanctum stand-in; §12.2 gains the composition rules the retune established. Balance numbers themselves stay in data and stay provisional.
+
 **Amendment 2026-08-29 (flagged [AMD]):** eight gaps and one contradiction found while planning M0 are resolved in-place — the Poise model (§4.6/§4.8/§6.2), tie-break Speed and hand overflow (§4.1), Wait's cost (§4.3), enemy Guard (§4.4), Bleed's decay (§4.5), the draw-decoupling counter and a Speed floor (§4.7), the piles (§4.9: opening hand, shuffling, return timing), and the provisional M0 deck (§5.1) — and the game's presentation is specified for the first time (§15.1: first-person, cards held in hand, enemies facing the camera). See `docs/M0_PLAN.md` §2. Open question 1 remains open by design and is scheduled for M0's S8.
 
 ---
@@ -184,6 +186,8 @@ Deck size 12–16.
 ### 4.10 End of combat
 
 All Guard, statuses, and Cooldowns clear. Cooldown cards return to the deck. HP, Max HP loss, and Saturation persist.
+
+**[AMD] M0 stands in for the Sanctum with a chain of three.** Persisting HP is only survivable because §11 lets a run heal at a Sanctum node; M0 has no map, so its six encounters are cut into chains of three, restored to full between them. The arithmetic forces the issue rather than taste: six fights on one 70 HP pool with no heal caps every fight at under 12 HP of damage, which is another way of saying no fight is allowed to matter. Chain length is the smallest stand-in that keeps §4.10's attrition real, and it is deleted when the map lands. **The fight, not the encounter, is the unit of tension; the chain is the unit of attrition.**
 
 ---
 
@@ -429,6 +433,12 @@ enemy_speed  = base_speed        // never scales — Speed is the player's axis
 Speed deliberately does not scale with level. If enemy Speed grew, the entire queue-planning skill would degrade over a run.
 
 ### 12.2 Archetypes (v1 target: 14)
+
+**[AMD] Only Speed is a design commitment here.** HP, Poise, and intent damage for the three M0 archetypes are provisional in exactly the way §5.1's deck is, and live in `src/data/archetypes.ts`. What the M0 tuning pass fixed is worth carrying forward as a rule rather than as numbers:
+
+- **An archetype's base statline is its *add* strength** — what it is worth standing beside something bigger. A solo fight raises the enemy's **level** (§12.1) instead of writing a second statline, so one archetype covers both roles.
+- **A second enemy adds its whole damage output while adding only its own HP to the pool.** A duo must therefore be built from cheaper parts than the solo fight before it, and a trio from cheaper parts again. Encounters that ignore this are unwinnable long before they look it.
+- **Fast chip enemies bound fight length.** Any readable per-hit number, multiplied by the thirty-odd actions a Speed-130 pair takes across a long fight, is lethal. A fight built on fast chippers is a short fight by construction; length comes from slow, lumpy enemies like the Warden.
 
 | Name | SPD | Role |
 |---|---|---|

@@ -146,11 +146,17 @@ describe('encounter end (GDD §4.10)', () => {
 
   it('ends when the player dies', () => {
     const { state } = opening();
+    // A player one hit from death, and a rat too composed to be staggered out
+    // of taking it. Both are needed: Wait's +3 Guard would absorb the bite, and
+    // a Strike into ordinary rat Poise delays the bite past the player's turn.
     const doomed = {
       ...state,
-      actors: state.actors.map((a) => (a.id === PLAYER ? { ...a, hp: 2 } : a)),
+      actors: state.actors.map((a) => {
+        if (a.id === PLAYER) return { ...a, hp: 1 };
+        return a.id === RAT ? { ...a, poise: 99 } : a;
+      }),
     };
-    const step = commit(doomed, { kind: 'wait' });
+    const step = commit(doomed, { kind: 'play', card: LIGHT, target: RAT });
 
     expect(step.state.outcome).toBe('lost');
   });

@@ -163,10 +163,11 @@ describe('what the preview tells the player (GDD §4.2, §15)', () => {
 
     // Playing at t6 for Weight 10 puts the player at t16. Crush also breaks the
     // rat's Poise, so its bite slides from t9 to t12 — but three enemy turns
-    // still land first: the Warden's swing at t9, then the rat twice.
+    // still land first: the Warden's swing at t9 for 13, then the rat twice for
+    // 1 and 2.
     expect(preview.playerNextTick).toBe(16);
     expect(preview.enemyTurnsBeforePlayer).toBe(3);
-    expect(preview.incomingDamage).toBe(26);
+    expect(preview.incomingDamage).toBe(16);
     expect(preview.staggers).toEqual([expect.objectContaining({ delay: 3 })]);
   });
 
@@ -189,6 +190,6 @@ describe('what the preview tells the player (GDD §4.2, §15)', () => {
     // acted once, so its rotation is on Venom Bite (GDD §12.2).
     expect(waiting.playerNextTick).toBe(9);
     expect(waiting.enemyTurnsBeforePlayer).toBe(1);
-    expect(waiting.incomingDamage).toBe(2);
+    expect(waiting.incomingDamage).toBe(1);
   });
 });

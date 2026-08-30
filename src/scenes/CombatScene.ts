@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { m0Catalogue } from '../data/cards.ts';
-import { ENCOUNTERS, PLAYER } from '../data/encounters.ts';
+import { CHAIN_SIZE, ENCOUNTERS, PLAYER, PLAYER_MAX_HP, startsChain } from '../data/encounters.ts';
 import type { Action } from '../sim/actions.ts';
 import { isAlive } from '../sim/actor.ts';
 import type { CardDefinition } from '../sim/card.ts';
@@ -43,10 +43,12 @@ interface CombatViews {
  */
 export class CombatScene extends Phaser.Scene {
   private encounterIndex = 0;
+  /** HP the current encounter was entered on — GDD §4.10, carried between fights. */
+  private enteringHp = PLAYER_MAX_HP;
   private rules: CombatRules = DEFAULT_RULES;
   private animations = true;
   private readonly session = new SessionLog();
-  private state: CombatState = openingState(0, DEFAULT_RULES);
+  private state: CombatState = openingState({ index: 0, rules: DEFAULT_RULES, hp: PLAYER_MAX_HP });
   private target: ActorId | null = null;
   private views: CombatViews | null = null;
   private autoWait: Phaser.Time.TimerEvent | null = null;
@@ -143,11 +145,24 @@ export class CombatScene extends Phaser.Scene {
     views.readout.render('', null);
   }
 
-  /** A cleared or lost encounter moves on to the next one in the set. */
+  /**
+   * A cleared encounter carries its wound into the next one (GDD §4.10); dying
+   * sends you back to the first, whole. The chain boundary restores HP — see
+   * CHAIN_SIZE in the encounter data for why M0 needs one at all.
+   */
   private advanceEncounter(): void {
     if (this.state.outcome === 'ongoing') return;
 
+    if (this.state.outcome === 'lost') {
+      this.encounterIndex = 0;
+      this.enteringHp = PLAYER_MAX_HP;
+      this.restart();
+      return;
+    }
+
     this.encounterIndex = (this.encounterIndex + 1) % ENCOUNTERS.length;
+    const survivingHp = findActor(this.state, PLAYER)?.hp ?? PLAYER_MAX_HP;
+    this.enteringHp = startsChain(this.encounterIndex) ? PLAYER_MAX_HP : survivingHp;
     this.restart();
   }
 
@@ -190,7 +205,10 @@ export class CombatScene extends Phaser.Scene {
       this.restart();
     });
     keys.on('keydown-N', () => {
+      // A debug jump, not a cleared fight: enter the next encounter whole, so
+      // it can be read on its own terms.
       this.encounterIndex = (this.encounterIndex + 1) % ENCOUNTERS.length;
+      this.enteringHp = PLAYER_MAX_HP;
       this.restart();
     });
   }
@@ -206,7 +224,11 @@ export class CombatScene extends Phaser.Scene {
   }
 
   private restart(): void {
-    this.state = openingState(this.encounterIndex, this.rules);
+    this.state = openingState({
+      index: this.encounterIndex,
+      rules: this.rules,
+      hp: this.enteringHp,
+    });
     this.target = firstLivingEnemy(this.state);
     this.renderAll();
   }
@@ -269,7 +291,7 @@ export class CombatScene extends Phaser.Scene {
     views.piles.render(this.state);
     views.banner.render(
       encounterAt(this.encounterIndex).name,
-      `${encounterAt(this.encounterIndex).teaches}   ·   seed ${String(SESSION_SEED)}`,
+      `${encounterAt(this.encounterIndex).teaches}   ·   ${this.chainLabel()}   ·   seed ${String(SESSION_SEED)}`,
       this.state.outcome === 'ongoing' ? '' : this.endOfEncounterSummary(),
     );
     views.tuning.render(this.rules, this.animations);
@@ -297,6 +319,17 @@ export class CombatScene extends Phaser.Scene {
   }
 
   /** What the gate's questions need, counted rather than remembered (§7). */
+  /**
+   * P3/P5: HP carrying between fights is only a real cost if the player can see
+   * it coming. The label names the chain and where the next restore is.
+   */
+  private chainLabel(): string {
+    const position = (this.encounterIndex % CHAIN_SIZE) + 1;
+    const remaining = CHAIN_SIZE - position;
+    const rest = remaining === 0 ? 'rest after this' : `${String(remaining)} more before rest`;
+    return `fight ${String(position)}/${String(CHAIN_SIZE)} on this health · ${rest}`;
+  }
+
   private endOfEncounterSummary(): string {
     const totals = this.session.totals(Object.keys(this.state.catalogue).map(cardId));
     const played = `${String(totals.cardsPlayed)} cards · ${String(totals.waits)} waits`;
@@ -310,7 +343,19 @@ export class CombatScene extends Phaser.Scene {
       `${outcomeWord(this.state.outcome)} — click to continue`,
       `${played} · ${fought}`,
       unplayed,
+      this.carryLine(),
     ].join('\n');
+  }
+
+  /** What you take into the next fight — the whole point of §4.10. */
+  private carryLine(): string {
+    if (this.state.outcome === 'lost') return 'the set restarts from the first fight';
+
+    const hp = findActor(this.state, PLAYER)?.hp ?? 0;
+    const next = (this.encounterIndex + 1) % ENCOUNTERS.length;
+    return startsChain(next)
+      ? `you rest — the next fight starts at ${String(PLAYER_MAX_HP)} HP`
+      : `you carry ${String(hp)} HP into the next fight`;
   }
 
   private teardown(): void {
@@ -359,10 +404,19 @@ function readSeed(): number {
   return Number.isFinite(parsed) ? parsed : Date.now();
 }
 
-function openingState(index: number, rules: CombatRules): CombatState {
+interface OpeningSpec {
+  readonly index: number;
+  readonly rules: CombatRules;
+  /** Health carried in from the previous encounter (GDD §4.10). */
+  readonly hp: number;
+}
+
+function openingState({ index, rules, hp }: OpeningSpec): CombatState {
   const catalogue = m0Catalogue();
   const started = startCombat({
-    actors: encounterAt(index).actors,
+    actors: encounterAt(index).actors.map((actor) =>
+      actor.side === 'player' ? { ...actor, hp } : actor,
+    ),
     catalogue,
     deck: Object.keys(catalogue).map(cardId),
     // One stream in M0; the map and gem streams arrive with the run layer.
