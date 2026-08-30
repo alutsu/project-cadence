@@ -1,10 +1,26 @@
 import Phaser from 'phaser';
 import type { CardDefinition } from '../sim/card.ts';
-import { COLORS, FONT, INK, LAYOUT, MUTED, PLAYER_INK, TYPE } from './theme.ts';
+import {
+  COLORS,
+  ENEMY_INK,
+  FONT,
+  GUARD_INK,
+  INK,
+  LAYOUT,
+  MUTED,
+  PLAYER_INK,
+  TYPE,
+} from './theme.ts';
 
 export interface CardFaceOptions {
   readonly scene: Phaser.Scene;
   readonly card: CardDefinition;
+  /**
+   * Ticks this card costs the player right now, from the sim. Equal to Weight
+   * at Speed 100 and different under Slow or Haste — the card face is where
+   * that gap has to be visible, because it is the thing being chosen.
+   */
+  readonly delay: number;
   readonly onPlay: (card: CardDefinition) => void;
   readonly onHover: (card: CardDefinition | null) => void;
 }
@@ -26,7 +42,7 @@ export class CardFace {
   private readonly panel: Phaser.GameObjects.Rectangle;
 
   constructor(options: CardFaceOptions) {
-    const { scene, card, onPlay, onHover } = options;
+    const { scene, card, delay, onPlay, onHover } = options;
     const { cardWidth, cardHeight } = LAYOUT.hand;
 
     this.view = scene.add.container(0, 0);
@@ -72,6 +88,26 @@ export class CardFace {
             fontSize: TYPE.cardStat,
             color: column.emphasis ? PLAYER_INK : INK,
           })
+          .setOrigin(0.5, 0.5),
+      );
+    }
+
+    // Only drawn when Weight and its cost have come apart, so the card stays
+    // clean at Speed 100 and the tax is unmissable when there is one (P5).
+    if (delay !== card.weight) {
+      const heavier = delay > card.weight;
+      this.view.add(
+        scene.add
+          .text(
+            0,
+            cardHeight / 2 - 16,
+            `${heavier ? 'COSTS' : 'ONLY'} ${String(delay)} TICKS NOW`,
+            {
+              fontFamily: FONT,
+              fontSize: TYPE.cardStatLabel,
+              color: heavier ? ENEMY_INK : GUARD_INK,
+            },
+          )
           .setOrigin(0.5, 0.5),
       );
     }

@@ -113,7 +113,7 @@ export const ENCOUNTERS: readonly Encounter[] = [
   },
   {
     name: 'Discord',
-    teaches: 'Slow is a queue effect — Heavy cards cost more while it holds.',
+    teaches: 'Slow taxes every card, Heavy ones hardest — watch the cost, not the Weight.',
     actors: [PLAYER_SEED, adept(SOLO_LEVEL)],
   },
   {

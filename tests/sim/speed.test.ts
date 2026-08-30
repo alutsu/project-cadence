@@ -9,6 +9,8 @@ import {
   effectiveSpeed,
 } from '../../src/sim/speed.ts';
 import { tick } from '../../src/sim/tick.ts';
+import { actorDelay, type Actor } from '../../src/sim/actor.ts';
+import { actorId } from '../../src/sim/ids.ts';
 
 describe('effectiveSpeed (GDD §4.7)', () => {
   it('is linear up to the soft cap', () => {
@@ -74,5 +76,48 @@ describe('drawsOnAction (GDD §4.7 [AMD])', () => {
     expect(drawsOnAction(150, 0)).toBe(true);
     expect(drawsOnAction(150, 1)).toBe(false);
     expect(drawsOnAction(150, 2)).toBe(true);
+  });
+
+  it('tells an actor what a Weight costs it right now (GDD §4.1)', () => {
+    const base: Actor = {
+      id: actorId('player'),
+      name: 'Adventurer',
+      side: 'player',
+      index: 0,
+      baseSpeed: BASE_SPEED,
+      speedGain: 0,
+      hp: 70,
+      maxHp: 70,
+      guard: 0,
+      poise: 0,
+      staggersTaken: 0,
+      statuses: [],
+      nextActTick: tick(6),
+      actionsCommitted: 0,
+      intents: [],
+      intentIndex: 0,
+    };
+
+    // At Speed 100 the two numbers coincide, which is why they are so easy to
+    // confuse for one another everywhere else.
+    expect(actorDelay(base, tick(4))).toBe(4);
+    expect(actorDelay(base, tick(10))).toBe(10);
+
+    const slowed: Actor = {
+      ...base,
+      statuses: [{ kind: 'slow', magnitude: 25, expiresAt: tick(24), nextProcAt: null }],
+    };
+
+    // Slow taxes every card, and the heavier one by more: ceil(w * 100 / 75).
+    expect(actorDelay(slowed, tick(4))).toBe(6);
+    expect(actorDelay(slowed, tick(10))).toBe(14);
+
+    const hasted: Actor = {
+      ...base,
+      statuses: [{ kind: 'haste', magnitude: 25, expiresAt: tick(24), nextProcAt: null }],
+    };
+
+    expect(actorDelay(hasted, tick(4))).toBe(4);
+    expect(actorDelay(hasted, tick(10))).toBe(8);
   });
 });

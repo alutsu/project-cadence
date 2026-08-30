@@ -12,6 +12,7 @@ const IDLE_HINT = 'hover a card to see where it puts you';
 export class PreviewReadout {
   private readonly headline: Phaser.GameObjects.Text;
   private readonly detail: Phaser.GameObjects.Text;
+  private idleNote: string | null = null;
 
   constructor(scene: Phaser.Scene) {
     const y = LAYOUT.queue.top + LAYOUT.queue.slotHeight + 34;
@@ -31,9 +32,18 @@ export class PreviewReadout {
       .setOrigin(0.5, 0.5);
   }
 
+  /**
+   * A line to stand in place of the hover hint until the player acts. Used for
+   * the opening exchange, which happens before they can do anything about it.
+   */
+  setIdleNote(note: string | null): void {
+    this.idleNote = note;
+  }
+
   render(label: string, preview: ActionPreview | null): void {
     if (preview === null) {
-      this.headline.setText(IDLE_HINT).setColor(MUTED);
+      const note = this.idleNote;
+      this.headline.setText(note ?? IDLE_HINT).setColor(note === null ? MUTED : ENEMY_INK);
       this.detail.setText('');
       return;
     }

@@ -1,5 +1,5 @@
 import type { ActorId } from './ids.ts';
-import { effectiveSpeed } from './speed.ts';
+import { actionDelay, effectiveSpeed } from './speed.ts';
 import { speedModifier, type Status, type StatusKind } from './status.ts';
 import type { Tick } from './tick.ts';
 
@@ -71,4 +71,16 @@ export function isAlive(actor: Actor): boolean {
 /** Base Speed plus every Haste and Slow currently on the actor (GDD §4.5). */
 export function actorSpeed(actor: Actor): number {
   return effectiveSpeed(actor.baseSpeed, actor.speedGain + speedModifier(actor.statuses));
+}
+
+/**
+ * What a Weight costs this actor *right now*, in ticks (GDD §4.1).
+ *
+ * Weight is a property of the card; the delay it buys is a property of the
+ * moment, and Slow and Haste pull them apart. The UI needs this rather than the
+ * formula: GDD §15 says the player never does the multiplication, which means
+ * the interface must not do it either (CLAUDE.md §2.1).
+ */
+export function actorDelay(actor: Actor, weight: Tick): Tick {
+  return actionDelay(weight, actorSpeed(actor));
 }

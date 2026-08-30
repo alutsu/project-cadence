@@ -1,7 +1,8 @@
 import Phaser from 'phaser';
 import type { CardDefinition } from '../sim/card.ts';
 import { findCard } from '../sim/card.ts';
-import type { CombatState } from '../sim/state.ts';
+import { playerActor, type CombatState } from '../sim/state.ts';
+import { actorDelay } from '../sim/actor.ts';
 import { CardFace } from './CardFace.ts';
 import { LAYOUT } from './theme.ts';
 
@@ -53,10 +54,14 @@ export class Hand {
     const { tiltDegrees } = LAYOUT.hand;
     const middle = (cards.length - 1) / 2;
 
+    // The cost of a card is asked of the sim, never worked out here (§2.1).
+    const player = playerActor(state);
+
     this.faces = cards.map((card, index) => {
       const face = new CardFace({
         scene: this.options.scene,
         card,
+        delay: player === undefined ? card.weight : actorDelay(player, card.weight),
         onPlay: this.options.onPlay,
         onHover: this.options.onHover,
       });

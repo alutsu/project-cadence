@@ -22,6 +22,7 @@ import { EnemyLine, enemySeat } from '../ui/EnemyLine.ts';
 import { Hand, handSeat } from '../ui/Hand.ts';
 import { PilesPanel } from '../ui/PilesPanel.ts';
 import { PreviewReadout } from '../ui/PreviewReadout.ts';
+import { openingReport } from '../ui/openingReport.ts';
 import { SessionLog } from '../ui/SessionLog.ts';
 import { Sfx } from '../ui/Sfx.ts';
 import { TuningPanel } from '../ui/TuningPanel.ts';
@@ -56,7 +57,8 @@ export class CombatScene extends Phaser.Scene {
   private animations = true;
   private readonly session = new SessionLog();
   private readonly sfx = new Sfx();
-  private state: CombatState = openingState({ index: 0, rules: DEFAULT_RULES, hp: PLAYER_MAX_HP });
+  private opening: Opening = openingState({ index: 0, rules: DEFAULT_RULES, hp: PLAYER_MAX_HP });
+  private state: CombatState = this.opening.state;
   private target: ActorId | null = null;
   private views: CombatViews | null = null;
   private autoWait: Phaser.Time.TimerEvent | null = null;
@@ -113,6 +115,7 @@ export class CombatScene extends Phaser.Scene {
       death: new DeathScreen(this),
     };
 
+    this.views.readout.setIdleNote(openingReport(this.state, this.opening.events));
     this.installTuningKeys();
 
     // Once an encounter is over the cards are inert, so a click anywhere is
@@ -257,12 +260,16 @@ export class CombatScene extends Phaser.Scene {
 
   private restart(): void {
     this.dismissArmed = false;
-    this.state = openingState({
+    this.opening = openingState({
       index: this.encounterIndex,
       rules: this.rules,
       hp: this.enteringHp,
     });
+    this.state = this.opening.state;
     this.target = firstLivingEnemy(this.state);
+    // GDD §4.1 lets a faster enemy act before the player ever sees the board.
+    // Say so, or the missing HP reads as a bug from the last fight.
+    this.views?.readout.setIdleNote(openingReport(this.state, this.opening.events));
     this.renderAll();
   }
 
@@ -285,6 +292,7 @@ export class CombatScene extends Phaser.Scene {
     const result = reduce(this.state, action);
     if (!result.ok) return;
 
+    this.views?.readout.setIdleNote(null);
     const before = this.state;
     const advanced = advanceToDecision(result.step.state);
     const events = [...result.step.events, ...advanced.events];
@@ -572,7 +580,13 @@ interface OpeningSpec {
   readonly hp: number;
 }
 
-function openingState({ index, rules, hp }: OpeningSpec): CombatState {
+/** The state an encounter opens on, and everything that happened getting there. */
+interface Opening {
+  readonly state: CombatState;
+  readonly events: readonly CombatEvent[];
+}
+
+function openingState({ index, rules, hp }: OpeningSpec): Opening {
   const catalogue = m0Catalogue();
   const started = startCombat({
     actors: encounterAt(index).actors.map((actor) =>
@@ -584,7 +598,8 @@ function openingState({ index, rules, hp }: OpeningSpec): CombatState {
     rng: createRng(SESSION_SEED + index, 'combat'),
     rules,
   });
-  return advanceToDecision(started.state).state;
+  const opened = advanceToDecision(started.state);
+  return { state: opened.state, events: [...started.events, ...opened.events] };
 }
 
 function firstLivingEnemy(state: CombatState): ActorId | null {
