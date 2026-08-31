@@ -75,7 +75,7 @@ describe('Ultimate rules (GDD §22 Q1)', () => {
     let state = advanceToDecision(step.state).state;
     let landedEvent = false;
     while (state.now < landsAt && state.outcome === 'ongoing') {
-      const waited = reduce(state, { kind: 'wait' });
+      const waited = reduce(state, { kind: 'guard' });
       if (!waited.ok) break;
       const advanced = advanceToDecision(waited.step.state);
       landedEvent ||= advanced.events.some((event) => event.kind === 'strike_landed');

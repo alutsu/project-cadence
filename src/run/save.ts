@@ -279,7 +279,7 @@ function readRules(value: unknown): CombatRules | string {
   const ultimate = ULTIMATE_RULES.find((rule) => rule === named);
   if (ultimate === undefined) return '"rules.ultimate" names an unknown rule';
 
-  const numbers = ['guardCap', 'guardDecayPerTick', 'waitWeight', 'waitGuard', 'firstStagger'];
+  const numbers = ['guardCap', 'guardDecayEvery', 'guardWeight', 'guardGain', 'firstStagger'];
   for (const field of numbers) {
     const read = readNumber(value[field], `rules.${field}`);
     if (typeof read === 'string') return read;
@@ -288,9 +288,9 @@ function readRules(value: unknown): CombatRules | string {
   return {
     ultimate,
     guardCap: Number(value.guardCap),
-    guardDecayPerTick: Number(value.guardDecayPerTick),
-    waitWeight: tick(Number(value.waitWeight)),
-    waitGuard: Number(value.waitGuard),
+    guardDecayEvery: Number(value.guardDecayEvery),
+    guardWeight: tick(Number(value.guardWeight)),
+    guardGain: Number(value.guardGain),
     firstStagger: Number(value.firstStagger),
   };
 }

@@ -94,7 +94,7 @@ export class CombatScene extends Phaser.Scene {
   private enteredOn: number = this.run.hp;
   private target: ActorId | null = null;
   private views: CombatViews | null = null;
-  private autoWait: Phaser.Time.TimerEvent | null = null;
+  private autoGuard: Phaser.Time.TimerEvent | null = null;
   /**
    * The turns between one decision and the next, played one at a time. Every
    * beat it holds has already been resolved by the reducer — it decides how
@@ -157,11 +157,11 @@ export class CombatScene extends Phaser.Scene {
       }),
       bar: new ActionBar({
         scene: this,
-        onWait: () => {
-          this.commitFromPress({ kind: 'wait' });
+        onGuard: () => {
+          this.commitFromPress({ kind: 'guard' });
         },
-        onHoverWait: (hovering) => {
-          this.previewWait(hovering);
+        onHoverGuard: (hovering) => {
+          this.previewGuard(hovering);
         },
       }),
       readout: new PreviewReadout(this),
@@ -229,10 +229,10 @@ export class CombatScene extends Phaser.Scene {
     this.showPreview({ kind: 'play', card: card.id, target }, card.name.toUpperCase());
   }
 
-  private previewWait(hovering: boolean): void {
+  private previewGuard(hovering: boolean): void {
     if (this.playback.isPlaying) return;
     if (hovering) {
-      this.showPreview({ kind: 'wait' }, 'WAIT');
+      this.showPreview({ kind: 'guard' }, 'GUARD');
       return;
     }
     this.clearPreview();
@@ -334,14 +334,14 @@ export class CombatScene extends Phaser.Scene {
       this.retune({ guardCap: this.run.rules.guardCap + 5 });
     });
     keys.on('keydown-J', () => {
-      this.retune({ guardDecayPerTick: Math.max(0, this.run.rules.guardDecayPerTick - 1) });
+      this.retune({ guardDecayEvery: Math.max(0, this.run.rules.guardDecayEvery - 1) });
     });
     keys.on('keydown-K', () => {
-      this.retune({ guardDecayPerTick: this.run.rules.guardDecayPerTick + 1 });
+      this.retune({ guardDecayEvery: this.run.rules.guardDecayEvery + 1 });
     });
     keys.on('keydown-W', () => {
       this.retune({
-        waitWeight: tick(this.run.rules.waitWeight >= 6 ? 2 : this.run.rules.waitWeight + 1),
+        guardWeight: tick(this.run.rules.guardWeight >= 6 ? 2 : this.run.rules.guardWeight + 1),
       });
     });
     keys.on('keydown-A', () => {
@@ -512,7 +512,7 @@ export class CombatScene extends Phaser.Scene {
   }
 
   /**
-   * An action taken by a press — a card, or the Wait button. Marks the press so
+   * An action taken by a press — a card, or the Guard button. Marks the press so
    * the scene handler that follows it knows the playback is its own doing.
    */
   private commitFromPress(action: Action): void {
@@ -594,7 +594,7 @@ export class CombatScene extends Phaser.Scene {
       if (event.kind === 'card_played' && event.actor === PLAYER) {
         this.playedCardSound(beat.before, event.card);
       }
-      if (event.kind === 'waited') this.sfx.guard();
+      if (event.kind === 'guarded') this.sfx.guard();
       if (event.kind === 'damage_dealt') this.sfx.impact(event.amount);
       if (event.kind === 'staggered') this.sfx.stagger();
       if (event.kind === 'actor_died') this.sfx.death();
@@ -712,7 +712,7 @@ export class CombatScene extends Phaser.Scene {
     views.forge.render(this.run);
     if (this.state.outcome === 'lost') views.death.show(this.deathReport());
     else views.death.hide();
-    this.armAutoWait();
+    this.armAutoGuard();
   }
 
   /**
@@ -720,9 +720,9 @@ export class CombatScene extends Phaser.Scene {
    * after a beat. The pause is deliberate — it reads as the character hesitating
    * rather than as the game skipping the turn.
    */
-  private armAutoWait(): void {
-    this.autoWait?.remove();
-    this.autoWait = null;
+  private armAutoGuard(): void {
+    this.autoGuard?.remove();
+    this.autoGuard = null;
 
     const idle =
       !this.playback.isPlaying &&
@@ -731,8 +731,8 @@ export class CombatScene extends Phaser.Scene {
       !hasPlayableCard(this.state.hand, this.state.catalogue);
     if (!idle) return;
 
-    this.autoWait = this.time.delayedCall(AUTO_WAIT_DELAY_MS, () => {
-      this.commit({ kind: 'wait' });
+    this.autoGuard = this.time.delayedCall(AUTO_GUARD_DELAY_MS, () => {
+      this.commit({ kind: 'guard' });
     });
   }
 
@@ -844,8 +844,8 @@ export class CombatScene extends Phaser.Scene {
     views.forge.destroy();
     this.input.removeAllListeners();
     this.input.keyboard?.removeAllListeners();
-    this.autoWait?.remove();
-    this.autoWait = null;
+    this.autoGuard?.remove();
+    this.autoGuard = null;
     this.sfx.destroy();
     this.views = null;
   }
@@ -859,7 +859,7 @@ interface LandedBlow {
 }
 
 /** GDD §4.3: the beat before Wait is taken for the player. */
-const AUTO_WAIT_DELAY_MS = 1500;
+const AUTO_GUARD_DELAY_MS = 1500;
 
 function outcomeWord(outcome: CombatState['outcome']): string {
   return outcome === 'won' ? 'cleared' : 'you died';

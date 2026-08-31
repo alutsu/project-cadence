@@ -76,7 +76,7 @@ export class SessionLog {
       this.played.set(event.card, (this.played.get(event.card) ?? 0) + 1);
       return;
     }
-    if (event.kind === 'waited') this.waits += 1;
+    if (event.kind === 'guarded') this.waits += 1;
     if (event.kind === 'staggered') this.staggers += 1;
     if (event.kind === 'damage_dealt' && event.target === player) {
       this.damageTaken += event.amount;

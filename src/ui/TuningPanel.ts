@@ -6,7 +6,7 @@ const KEYS = [
   'U  ultimate rule',
   'G / H  guard cap −/+',
   'J / K  guard decay −/+',
-  'W  wait weight',
+  'W  guard weight',
   'A  animations   S  sound',
   'R  restart   N  next fight',
 ] as const;
@@ -24,7 +24,7 @@ function onOff(on: boolean): string {
 /**
  * The tuning console (docs/M0_PLAN.md §4, S8). A solo developer cannot chase a
  * feel across a rebuild — the numbers GDD §22 flags as guesses (Guard's cap and
- * decay, the Ultimate rule, Wait's Weight) have to move while playing.
+ * decay, the Ultimate rule, the Guard action's Weight) have to move while playing.
  */
 export class TuningPanel {
   private readonly lines: Phaser.GameObjects.Text;
@@ -61,8 +61,8 @@ export class TuningPanel {
       [
         `ultimate    ${rules.ultimate}`,
         `            ${ULTIMATE_RULE_NOTES[rules.ultimate]}`,
-        `guard       cap ${String(rules.guardCap)}   decay ${String(rules.guardDecayPerTick)}/tick`,
-        `wait        W${String(rules.waitWeight)}   +${String(rules.waitGuard)} guard`,
+        `guard       cap ${String(rules.guardCap)}   1 per ${String(rules.guardDecayEvery)} ticks`,
+        `guard act   W${String(rules.guardWeight)}   +${String(rules.guardGain)} guard`,
         `animations  ${onOff(output.animations)}   sound  ${onOff(output.sound)}`,
       ].join('\n'),
     );

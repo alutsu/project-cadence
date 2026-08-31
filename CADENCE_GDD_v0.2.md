@@ -56,7 +56,7 @@ Per encounter:
 
 ```
 Timeline advances → lowest next_act_tick acts
-  Player: draw 1 → play 1 card (or Wait) → card enters Cooldown → reschedule by Weight
+  Player: draw 1 → play 1 card (or Guard) → card enters Cooldown → reschedule by Weight
   Enemy:  execute telegraphed intent → reschedule
   Between: tick-based effects resolve (DoT, Guard decay, buff expiry, Cooldown returns)
 ```
@@ -105,19 +105,45 @@ Next **8** turn slots render as a strip at the top of combat. Enemy intents are 
 
 Hovering a card **re-renders the queue in ghost form**. This is the core UX of the entire game; build it first (§18).
 
-### 4.3 The Wait action [NEW]
+### 4.3 The Guard action [NEW]
+
+**[AMD 2026-08-31] It was called Wait.** The name stated the cost and not the
+point: the action is Weight 3, **draw 1, and put Guard up**, and a playtester
+reported that "Wait" communicated none of that. It is called **Guard**, which is
+also what it grants — the word does double duty deliberately, because "I guard"
+→ "I gain Guard" is the shortest possible path from the button to the rule. The
+one thing lost is the reading of it as a pure tempo play, which nobody was
+making anyway.
 
 **Gap in v0.1:** the player could be forced to play a bad card, or hold a hand of cards all on cooldown with no legal action.
 
-The player may always **Wait**: Weight 3, draw 1, gain 3 Guard. Waiting is a real tactic — letting a key card come off Cooldown, or ducking under an enemy's wind-up so their big hit lands while you're already recovering. If the hand is empty and no card can be played, Wait is auto-selected after a 1.5s beat.
+The player may always **Guard**: Weight 3, draw 1, gain 3 Guard. It is a real tactic — letting a key card come off Cooldown, or ducking under an enemy's wind-up so their big hit lands while you're already recovering. If the hand is empty and no card can be played, it is auto-selected after a 1.5s beat.
 
-**[AMD] Wait's draw is an extra one.** §3's loop already draws 1 at the start of every player turn, so Wait's "draw 1" is a second card, not a restatement of the first. The relic *Second Wind* (§10) reads "Wait draws 2 instead of 1" on the same understanding. Wait therefore trades tempo for cards, which is what makes it a tactic rather than a pass. If it proves too strong at the M0 gate, the lever is Wait's Weight, not its draw.
+**[AMD] The draw is an extra one.** §3's loop already draws 1 at the start of every player turn, so this action's "draw 1" is a second card, not a restatement of the first. The relic *Second Wind* (§10) reads "the Guard action draws 2 instead of 1" on the same understanding. It therefore trades tempo for cards and defence, which is what makes it a tactic rather than a pass. If it proves too strong, the lever is its Weight, not its draw.
 
-**[AMD] Wait's cost and limits.** Wait is an action, not a card: it enters no Cooldown pile and reschedules by the standard `ceil(3 * 100 / effective_speed)`. There is **no anti-spam rule** — 3 Guard barely outruns Guard's own 1-per-tick decay, so repeated Waiting loses ground to any enemy on its own. If playtesting shows turtling, the fix is a rising Weight on consecutive Waits, not a special-case restriction.
+**[AMD] Its cost and limits.** It is an action, not a card: it enters no Cooldown pile and reschedules by the standard `ceil(3 * 100 / effective_speed)`. There is **no anti-spam rule**. **[AMD 2026-08-31]** That rested on 3 Guard barely outrunning a 1-per-tick decay, which §4.4 has now changed to one per three ticks — so repeated Guarding banks more than it used to and turtling is worth watching for. The lever remains a rising Weight on consecutive uses rather than a special-case restriction.
 
 **[AMD] Drawing into a full hand** (§4.1, hand cap 6) is **skipped**: the card stays on top of the draw pile and nothing is discarded. A full hand means the draw is waiting for you — holding cards has a cost, and no card is ever silently lost.
 
 ### 4.4 Defense: Guard [NEW]
+
+**[AMD 2026-08-31] Guard decays one point every three ticks, not one per tick.**
+v0.2's rate made Guard arithmetic that never mattered: the Guard action grants
+3, so it was gone in three ticks of a forty-tick fight. Three consecutive
+playtests recorded Guard absorbing **nothing** in 23 of 25 and then 8 of 9
+fights — §4.4 makes Guard the game's only mitigation, so one of the six systems
+was inert while looking implemented. `docs/M0_GATE.md` §4 predicted this in as
+many words ("3 Guard gained at t6 is 0 Guard at t9") and M0's gate question 4
+answered *no* on the strength of it.
+
+The decay is computed from **absolute ticks** rather than a running total —
+`floor(to / 3) − floor(from / 3)` — so it sums correctly however finely the
+scheduler advances. A per-advance `floor(elapsed / 3)` would round three
+separate one-tick steps down to nothing each time and Guard would never fall off
+at all.
+
+This is §22 Q6 answered on evidence rather than closed by assumption; the cap of
+40 remains untested.
 
 **This was the largest hole in v0.1** — the document had no mitigation system at all, and StS-style Block ("expires at start of your turn") is incoherent when turns are asynchronous and one actor may take three turns to another's one.
 
@@ -420,7 +446,7 @@ Passive permanent modifiers, 1 per elite kill (choice of 2) plus Market purchase
 | **Weave** | *Prism* — Suppressed tags are only ×0.85, Ascendant only ×1.15 |
 | **Weave** | *Zealot's Blinders* — Saturation cap becomes 50%, but Ascendant becomes ×1.7 |
 | **Socket** | *Bone Ledger* — socket attempts cost 4% less Max HP, but failures also Scar an adjacent card |
-| **Deck** | *Second Wind* — Wait draws 2 instead of 1 |
+| **Deck** | *Second Wind* — the Guard action draws 2 instead of 1 |
 | **Risk** | *Glass Sigil* — +30% damage dealt and taken |
 
 Every relic should carry a real drawback. Pure upgrades create a known-correct relic ranking, which is exactly the meta this design exists to avoid.
@@ -727,7 +753,7 @@ the landing blow. Four rat turns for one card is hard to justify. Candidate fixe
 3. **Are three sockets too many for legibility?** May cap at 2.
 4. **Insight reroll cost of 1 is a guess.** If rerolling is cheap, generative crafting collapses into deterministic crafting and pillar P3 dies.
 5. **Does the player need any way to gain Max HP back?** Currently the only direction is down. A rare relic or Sanctum option may be needed to prevent a fragility death-spiral, but it partly undermines the socket cost.
-6. **Guard cap of 40 and decay of 1/tick are untested.** Guard is the game's only mitigation; getting this wrong makes the game either trivial or brutal.
+6. **Guard cap of 40 and decay of 1/tick are untested.** Guard is the game's only mitigation; getting this wrong makes the game either trivial or brutal. **[AMD 2026-08-31] Half answered.** The decay was measured across three playtests and found to be doing nothing at all — Guard absorbed nothing in 23 of 25, then 8 of 9 fights — and is now one point every three ticks (§4.4). The **cap of 40 is still untested**: nothing in play has come close to it, so the question stays open on that half.
 
 ---
 

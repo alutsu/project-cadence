@@ -13,7 +13,7 @@ const EVENTS: readonly CombatEvent[] = [
   { kind: 'card_played', at: tick(6), actor: PLAYER, card: STRIKE, weight: tick(4) },
   { kind: 'damage_dealt', tag: null, at: tick(6), source: PLAYER, target: RAT, amount: 9 },
   { kind: 'staggered', at: tick(6), actor: RAT, delay: tick(3) },
-  { kind: 'waited', at: tick(10), actor: PLAYER },
+  { kind: 'guarded', at: tick(10), actor: PLAYER },
   { kind: 'damage_dealt', tag: null, at: tick(12), source: RAT, target: PLAYER, amount: 3 },
 ];
 

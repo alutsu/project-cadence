@@ -106,7 +106,7 @@ describe('a preview never changes the board (CLAUDE.md §7.1)', () => {
     for (const target of state.actors.filter((actor) => actor.side === 'enemy')) {
       previewAction(state, { kind: 'play', card: LUNGE, target: target.id });
     }
-    previewAction(state, { kind: 'wait' });
+    previewAction(state, { kind: 'guard' });
 
     expect(structuredClone(state)).toEqual(before);
     expect(runtimeOf(state.build, gemId('g_spend')).charges).toBe(3);

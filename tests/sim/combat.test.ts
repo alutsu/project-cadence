@@ -80,10 +80,10 @@ describe('Weight moves the queue (GDD §4.1, pillar P1)', () => {
 
   it('reschedules Wait by its Weight of 3 (GDD §4.3)', () => {
     const { state } = opening();
-    const step = commit(state, { kind: 'wait' });
+    const step = commit(state, { kind: 'guard' });
 
     expect(nextActTickOf(step.state, PLAYER)).toBe(9);
-    expect(step.events.some((event) => event.kind === 'waited')).toBe(true);
+    expect(step.events.some((event) => event.kind === 'guarded')).toBe(true);
   });
 });
 
@@ -105,10 +105,10 @@ describe('the reducer refuses illegal actions (CLAUDE.md §5.4)', () => {
 
   it('rejects an action when it is not the player’s turn', () => {
     const { state } = opening();
-    const committed = reduce(state, { kind: 'wait' });
+    const committed = reduce(state, { kind: 'guard' });
     if (!committed.ok) throw new Error('wait should be legal');
 
-    const result = reduce(committed.step.state, { kind: 'wait' });
+    const result = reduce(committed.step.state, { kind: 'guard' });
     expect(result).toEqual({ ok: false, error: { reason: 'not_your_turn', activeActor: null } });
   });
 
@@ -138,7 +138,7 @@ describe('encounter end (GDD §4.10)', () => {
     expect(step.events).toContainEqual(
       expect.objectContaining({ kind: 'combat_ended', outcome: 'won' }),
     );
-    expect(reduce(step.state, { kind: 'wait' })).toEqual({
+    expect(reduce(step.state, { kind: 'guard' })).toEqual({
       ok: false,
       error: { reason: 'combat_over' },
     });

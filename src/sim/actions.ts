@@ -7,11 +7,11 @@ import { tick, type Tick } from './tick.ts';
  */
 export type Action =
   | { readonly kind: 'play'; readonly card: CardId; readonly target: ActorId }
-  | { readonly kind: 'wait' };
+  | { readonly kind: 'guard' };
 
 /** GDD §4.3: Wait is Weight 3, draw 1, gain 3 Guard. */
-export const WAIT_WEIGHT: Tick = tick(3);
-export const WAIT_GUARD = 3;
+export const GUARD_WEIGHT: Tick = tick(3);
+export const GUARD_GAIN = 3;
 
 /**
  * Why an action was refused. Illegal actions are rejected by the reducer, not

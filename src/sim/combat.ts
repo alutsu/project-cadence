@@ -666,8 +666,8 @@ export function reduce(state: CombatState, action: Action): ReduceResult {
     return { ok: false, error: { reason: 'not_your_turn', activeActor: state.activeActorId } };
   }
 
-  return action.kind === 'wait'
-    ? { ok: true, step: commitWait(state, actor) }
+  return action.kind === 'guard'
+    ? { ok: true, step: commitGuard(state, actor) }
     : commitPlay(state, actor, action);
 }
 
@@ -683,7 +683,7 @@ function activePlayer(state: CombatState): Actor | null {
  * has no anti-spam rule. Its draw and its 3 Guard arrive with the piles (S4) and
  * Guard (S5).
  */
-function commitWait(state: CombatState, actor: Actor): CombatStep {
+function commitGuard(state: CombatState, actor: Actor): CombatStep {
   const at = state.now;
   const bled = sufferBleed(state, actor);
   const drawn = drawOne(bled.state);
@@ -691,18 +691,18 @@ function commitWait(state: CombatState, actor: Actor): CombatStep {
   // GDD §4.3: Weight 3, draw 1, gain 3 Guard.
   const guarded = withActor(
     drawn.state,
-    gainGuard(currentActor(drawn.state, actor), state.rules.waitGuard, state.rules.guardCap),
+    gainGuard(currentActor(drawn.state, actor), state.rules.guardGain, state.rules.guardCap),
   );
   const acted = withActor(
     guarded,
-    reschedule(currentActor(guarded, actor), at, { weight: state.rules.waitWeight }),
+    reschedule(currentActor(guarded, actor), at, { weight: state.rules.guardWeight }),
   );
 
   return settleOutcome({ ...acted, activeActorId: null }, [
-    { kind: 'waited', at, actor: actor.id },
+    { kind: 'guarded', at, actor: actor.id },
     ...bled.events,
     ...drawn.events,
-    { kind: 'guard_gained', at, actor: actor.id, amount: state.rules.waitGuard },
+    { kind: 'guard_gained', at, actor: actor.id, amount: state.rules.guardGain },
     scheduledEvent(acted, actor.id, at),
   ]);
 }

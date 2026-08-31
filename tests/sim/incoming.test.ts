@@ -5,7 +5,7 @@ import type { Action } from '../../src/sim/actions.ts';
 import { advanceToDecision, reduce, startCombat } from '../../src/sim/combat.ts';
 import type { CombatEvent } from '../../src/sim/events.ts';
 import { nextIncomingHit, previewAction } from '../../src/sim/forecast.ts';
-import { guardHoldsUntil } from '../../src/sim/guard.ts';
+import { guardHoldsUntil, pointsLost } from '../../src/sim/guard.ts';
 import { cardId } from '../../src/sim/ids.ts';
 import { createRng, type Rng } from '../../src/sim/rng.ts';
 import { DEFAULT_RULES } from '../../src/sim/rules.ts';
@@ -55,25 +55,27 @@ describe('the next blow, against the Guard that meets it (GDD §4.4)', () => {
   it('decays the Guard to the tick the blow lands on, not the tick it is read on', () => {
     const hit = nextIncomingHit(withPlayerGuard(opening(), 6));
 
-    // 6 Guard at t6 is 3 Guard at t9 — which still covers a 1-damage bite.
-    expect(hit).toEqual(expect.objectContaining({ guard: 3, absorbed: 1, toHp: 0 }));
+    // 6 Guard at t6 is 5 Guard at t9 — one point falls off every three ticks
+    // (GDD §4.4 [AMD]) — and it still covers a 1-damage bite.
+    expect(hit).toEqual(expect.objectContaining({ guard: 5, absorbed: 1, toHp: 0 }));
   });
 
   it('says how much of a blow too big for the Guard gets through', () => {
     const hit = nextIncomingHit(withoutRat(withPlayerGuard(opening(), 6)));
 
-    // With the rat gone the Warden's Ruinous Swing is next: 13 against the 3
+    // With the rat gone the Warden's Ruinous Swing is next: 13 against the 5
     // Guard left at t9.
     expect(hit).toEqual(
-      expect.objectContaining({ name: 'Ruinous Swing', damage: 13, guard: 3, toHp: 10 }),
+      expect.objectContaining({ name: 'Ruinous Swing', damage: 13, guard: 5, toHp: 8 }),
     );
   });
 
-  it('reads the decay rate off the rules rather than assuming one per tick', () => {
-    const brisk = { ...DEFAULT_RULES, guardDecayPerTick: 2 };
-    const hit = nextIncomingHit(withPlayerGuard(opening(brisk), 6));
+  it('reads the decay rate off the rules rather than assuming one', () => {
+    // The rate is a tuning knob (GDD §22 Q6), so the forecast must not bake it.
+    const brisk = { ...DEFAULT_RULES, guardDecayEvery: 1 };
+    const hit = nextIncomingHit(withPlayerGuard(opening(brisk), 2));
 
-    // Three ticks at 2 per tick spends the whole 6 before the bite lands.
+    // Three ticks at a point each spends the whole 2 before the bite lands.
     expect(hit).toEqual(expect.objectContaining({ guard: 0, absorbed: 0, toHp: 1 }));
   });
 
@@ -88,12 +90,25 @@ describe('the next blow, against the Guard that meets it (GDD §4.4)', () => {
 });
 
 describe('the Guard window (GDD §4.4)', () => {
-  it('runs out one tick per point at the default decay', () => {
-    expect(guardHoldsUntil(5, tick(10), 1)).toBe(15);
+  it('holds three ticks per point at the default decay (GDD §4.4 [AMD])', () => {
+    // The rate is now "ticks per point lost" rather than "points per tick", so
+    // a larger number is a *slower* decay and a longer window.
+    expect(guardHoldsUntil(5, tick(10), DEFAULT_RULES.guardDecayEvery)).toBe(24);
   });
 
   it('runs out sooner when the decay is faster', () => {
-    expect(guardHoldsUntil(5, tick(10), 2)).toBe(13);
+    expect(guardHoldsUntil(5, tick(10), 1)).toBe(15);
+  });
+
+  it('names the tick decay actually reaches zero on, not an estimate', () => {
+    // The strip says "guard holds until t"; if that drifted from the grid
+    // `decayGuard` uses, the caption would be wrong by up to `every - 1`.
+    const every = DEFAULT_RULES.guardDecayEvery;
+    const zeroAt = guardHoldsUntil(4, tick(7), every);
+    if (zeroAt === null) throw new Error('Guard that decays must run out');
+
+    expect(pointsLost(tick(7), zeroAt, every)).toBe(4);
+    expect(pointsLost(tick(7), tick(zeroAt - 1), every)).toBeLessThan(4);
   });
 
   it('never runs out when Guard does not decay', () => {
@@ -106,7 +121,7 @@ function legalActions(state: CombatState): readonly Action[] {
   const plays = state.hand.flatMap((card) =>
     targets.map((target): Action => ({ kind: 'play', card, target: target.id })),
   );
-  return [...plays, { kind: 'wait' }];
+  return [...plays, { kind: 'guard' }];
 }
 
 function pick<T>(rng: Rng, items: readonly T[]): T {

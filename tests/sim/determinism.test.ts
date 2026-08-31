@@ -8,7 +8,7 @@ import { HEAVY, LIGHT, PLAYER, RAT, STANDARD, scenario } from '../../src/sim-har
 
 const SCRIPT: readonly Action[] = [
   { kind: 'play', card: HEAVY, target: RAT },
-  { kind: 'wait' },
+  { kind: 'guard' },
   { kind: 'play', card: LIGHT, target: RAT },
   { kind: 'play', card: STANDARD, target: RAT },
 ];
@@ -90,7 +90,7 @@ describe('determinism (GDD §20.2, CLAUDE.md §7.2)', () => {
       't16 turn player',
       't16 no draw (draw_pile_empty)',
       // Wait is Weight 3 (GDD §4.3), so the player is back before the rat.
-      't16 waited player',
+      't16 guarded player',
       't16 no draw (draw_pile_empty)',
       't16 guard player +3',
       't16 scheduled player -> t19',
@@ -112,6 +112,11 @@ describe('determinism (GDD §20.2, CLAUDE.md §7.2)', () => {
       't22 turn rat',
       't22 intent rat Venom Bite',
       't22 damage rat -> player 1',
+      // GDD §4.4 [AMD]: Guard falls off a point every three ticks, so the 3 put
+      // up at t16 is still 1 at t22 and eats the bite whole. At one per tick it
+      // was gone by t19 and absorbed nothing all game — which is what three
+      // playtests recorded, and why the rate changed.
+      't22 guard player absorbed 1',
       't22 poison player 2',
       't22 scheduled rat -> t26',
       't23 turn player',
@@ -148,7 +153,7 @@ describe('determinism (GDD §20.2, CLAUDE.md §7.2)', () => {
     // The script no longer wins: the Weave took seven points off Crush and the
     // rat outlives all four cards (docs/M1_PLAN.md D22, D27).
     expect(state.outcome).toBe('ongoing');
-    expect(findActor(state, PLAYER)?.hp).toBe(57);
+    expect(findActor(state, PLAYER)?.hp).toBe(58);
     expect(findActor(state, RAT)?.hp).toBe(3);
   });
 });

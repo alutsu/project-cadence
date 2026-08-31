@@ -147,7 +147,7 @@ export function encounterRecord(input: EncounterInput): EncounterRecord {
     if (event.kind === 'card_played') {
       cardsPlayed[event.card] = (cardsPlayed[event.card] ?? 0) + 1;
       decisions += 1;
-    } else if (event.kind === 'waited') decisions += 1;
+    } else if (event.kind === 'guarded') decisions += 1;
     else if (event.kind === 'staggered') staggers += 1;
     else if (event.kind === 'guard_absorbed' && event.actor === player)
       guardAbsorbed += event.amount;

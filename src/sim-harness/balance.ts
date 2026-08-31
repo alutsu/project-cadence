@@ -126,7 +126,7 @@ function creditEvent(into: Attribution, event: CombatEvent): void {
     credit.card = event.card;
     return;
   }
-  if (event.kind === 'waited') {
+  if (event.kind === 'guarded') {
     credit.card = null;
     return;
   }

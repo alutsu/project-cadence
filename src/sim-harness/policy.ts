@@ -53,7 +53,7 @@ function handCards(state: CombatState): readonly CardDefinition[] {
 /** Picks by a score over the cards in hand, or Waits when the hand cannot act. */
 function choose(state: CombatState, score: (card: CardDefinition) => number): Action {
   const target = firstLivingEnemy(state);
-  if (target === undefined) return { kind: 'wait' };
+  if (target === undefined) return { kind: 'guard' };
 
   let best: { readonly card: CardId; readonly score: number } | null = null;
   for (const card of handCards(state)) {
@@ -61,7 +61,7 @@ function choose(state: CombatState, score: (card: CardDefinition) => number): Ac
     if (best === null || value > best.score) best = { card: card.id, score: value };
   }
 
-  return best === null ? { kind: 'wait' } : { kind: 'play', card: best.card, target: target.id };
+  return best === null ? { kind: 'guard' } : { kind: 'play', card: best.card, target: target.id };
 }
 
 /**
@@ -72,7 +72,7 @@ function choose(state: CombatState, score: (card: CardDefinition) => number): Ac
 export const leftmost: Policy = (state) => {
   const target = firstLivingEnemy(state);
   const card = state.hand[0];
-  if (target === undefined || card === undefined) return { kind: 'wait' };
+  if (target === undefined || card === undefined) return { kind: 'guard' };
   return { kind: 'play', card, target: target.id };
 };
 
@@ -91,14 +91,14 @@ export const tempo: Policy = (state) =>
  */
 export const focus: Policy = (state) => {
   const target = weakestLivingEnemy(state);
-  if (target === undefined) return { kind: 'wait' };
+  if (target === undefined) return { kind: 'guard' };
 
   let best: { readonly card: CardId; readonly score: number } | null = null;
   for (const card of handCards(state)) {
     const score = expectedDamage(state, card) / card.weight;
     if (best === null || score > best.score) best = { card: card.id, score };
   }
-  return best === null ? { kind: 'wait' } : { kind: 'play', card: best.card, target: target.id };
+  return best === null ? { kind: 'guard' } : { kind: 'play', card: best.card, target: target.id };
 };
 
 export const POLICIES: readonly NamedPolicy[] = [

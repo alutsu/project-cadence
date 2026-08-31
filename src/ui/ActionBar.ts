@@ -16,11 +16,19 @@ import {
 
 export interface ActionBarOptions {
   readonly scene: Phaser.Scene;
-  readonly onWait: () => void;
-  readonly onHoverWait: (hovering: boolean) => void;
+  readonly onGuard: () => void;
+  readonly onHoverGuard: (hovering: boolean) => void;
 }
 
-const WAIT_LABEL = 'WAIT  W3';
+/**
+ * The action is called **Guard** (GDD §4.3 [AMD]).
+ *
+ * It was "Wait", which named the cost and not the point: §4.3's action is
+ * Weight 3, draw 1, **and put Guard up**, and a playtest reported the word did
+ * not communicate any of that. Naming it for what it does costs nothing and is
+ * the difference between a button people press and one they do not.
+ */
+const GUARD_LABEL = 'GUARD  W3';
 
 /**
  * The player's own readouts. There is no avatar to hang them on (GDD §15.1), so
@@ -36,7 +44,7 @@ export class ActionBar {
   private readonly buttonLabel: Phaser.GameObjects.Text;
 
   constructor(options: ActionBarOptions) {
-    const { scene, onWait, onHoverWait } = options;
+    const { scene, onGuard, onHoverGuard } = options;
     const { margin } = LAYOUT.hud;
     const bottom = LAYOUT.height - margin;
 
@@ -73,16 +81,16 @@ export class ActionBar {
     this.button.setInteractive({ useHandCursor: true });
     this.button.on('pointerover', () => {
       this.button.setFillStyle(COLORS.panelActive);
-      onHoverWait(true);
+      onHoverGuard(true);
     });
     this.button.on('pointerout', () => {
       this.button.setFillStyle(COLORS.panel);
-      onHoverWait(false);
+      onHoverGuard(false);
     });
-    this.button.on('pointerdown', onWait);
+    this.button.on('pointerdown', onGuard);
 
     this.buttonLabel = scene.add
-      .text(this.button.x, this.button.y, WAIT_LABEL, {
+      .text(this.button.x, this.button.y, GUARD_LABEL, {
         fontFamily: FONT,
         fontSize: TYPE.button,
         color: INK,
@@ -113,7 +121,7 @@ export class ActionBar {
 
 function guardCaption(guard: number, state: CombatState): string {
   if (guard === 0) return '';
-  const zeroAt = guardHoldsUntil(guard, state.now, state.rules.guardDecayPerTick);
+  const zeroAt = guardHoldsUntil(guard, state.now, state.rules.guardDecayEvery);
   // Kept short deliberately: the hand's leftmost card is close behind this line.
   const window = zeroAt === null ? 'no decay' : `holds to t${String(zeroAt)}`;
   return `GUARD ${String(guard)}   ${window}`;

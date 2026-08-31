@@ -202,7 +202,11 @@ export function nextIncomingHit(state: CombatState): IncomingHit | null {
     if (slot.kind !== 'turn' || intent === null || intent.damage <= 0) continue;
     if (findActor(state, slot.actor)?.side !== 'enemy') continue;
 
-    const guarded = decayGuard(player, slot.at - state.now, state.rules.guardDecayPerTick);
+    const guarded = decayGuard(player, {
+      from: state.now,
+      to: slot.at,
+      every: state.rules.guardDecayEvery,
+    });
     const { absorbed, toHp } = absorb(guarded, intent.damage);
     return {
       source: slot.actor,

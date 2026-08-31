@@ -15,8 +15,8 @@ export function formatEvent(event: CombatEvent): string {
       return `${at} turn ${event.actor}`;
     case 'card_played':
       return `${at} played ${event.actor} ${event.card} w${String(event.weight)}`;
-    case 'waited':
-      return `${at} waited ${event.actor}`;
+    case 'guarded':
+      return `${at} guarded ${event.actor}`;
     case 'card_drawn':
       return `${at} drew ${event.card}`;
     case 'draw_skipped':

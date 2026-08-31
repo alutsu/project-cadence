@@ -52,7 +52,7 @@ describe('intent rotations (GDD §4.2, §12.2)', () => {
     // Let the swing land, and the rotation moves to the follow-up.
     let current = state;
     for (let turn = 0; turn < 3 && current.outcome === 'ongoing'; turn += 1) {
-      const waited = reduce(current, { kind: 'wait' });
+      const waited = reduce(current, { kind: 'guard' });
       if (!waited.ok) break;
       current = advanceToDecision(waited.step.state).state;
     }
@@ -78,7 +78,7 @@ describe('the archetypes carry their signature (GDD §12.2)', () => {
     let state = opened('Scurry');
 
     for (let turn = 0; turn < 6 && state.outcome === 'ongoing'; turn += 1) {
-      const waited = reduce(state, { kind: 'wait' });
+      const waited = reduce(state, { kind: 'guard' });
       if (!waited.ok) break;
       state = advanceToDecision(waited.step.state).state;
 
@@ -95,7 +95,7 @@ describe('the archetypes carry their signature (GDD §12.2)', () => {
     expect(adept?.name).toBe(CHIME_ADEPT.name);
 
     for (let turn = 0; turn < 6 && state.outcome === 'ongoing'; turn += 1) {
-      const waited = reduce(state, { kind: 'wait' });
+      const waited = reduce(state, { kind: 'guard' });
       if (!waited.ok) break;
       state = advanceToDecision(waited.step.state).state;
 

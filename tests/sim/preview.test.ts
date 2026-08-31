@@ -148,7 +148,7 @@ function legalActions(state: CombatState): readonly Action[] {
   const plays = state.hand.flatMap((card) =>
     targets.map((target): Action => ({ kind: 'play', card, target: target.id })),
   );
-  return [...plays, { kind: 'wait' }];
+  return [...plays, { kind: 'guard' }];
 }
 
 function turnsTaken(events: readonly CombatEvent[]): string[] {
@@ -300,7 +300,7 @@ describe('what the preview tells the player (GDD §4.2, §15)', () => {
       }).state,
     ).state;
 
-    const waiting = previewAction(state, { kind: 'wait' });
+    const waiting = previewAction(state, { kind: 'guard' });
     if (waiting === null) throw new Error('wait is always legal');
 
     // The player returns at t9 — and so does the rat, which wins the tie on

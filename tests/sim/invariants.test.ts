@@ -24,7 +24,7 @@ function legalActions(state: CombatState): readonly Action[] {
   const plays = state.hand.flatMap((card) =>
     targets.map((target): Action => ({ kind: 'play', card, target: target.id })),
   );
-  return [...plays, { kind: 'wait' }];
+  return [...plays, { kind: 'guard' }];
 }
 
 /** A scheduled effect never sits in the past — it would already have resolved. */

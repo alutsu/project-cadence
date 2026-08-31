@@ -16,9 +16,19 @@ export interface CombatRules {
   readonly ultimate: UltimateRule;
   /** GDD §4.4, open question 6 — untested numbers, hence tunable. */
   readonly guardCap: number;
-  readonly guardDecayPerTick: number;
-  readonly waitWeight: Tick;
-  readonly waitGuard: number;
+  /**
+   * Ticks per point of Guard lost (GDD §4.4 [AMD]).
+   *
+   * v0.2 said one point *per tick*, which made Guard arithmetic that never
+   * mattered: the Guard action grants 3, so it was gone in three ticks of a
+   * forty-tick fight. Three playtests running recorded Guard absorbing nothing
+   * in 23 of 25, then 8 of 9 fights — §4.4 makes Guard the game's only
+   * mitigation, and one of the six systems was inert.
+   */
+  readonly guardDecayEvery: number;
+  /** GDD §4.3: what the Guard action costs, and what it puts up. */
+  readonly guardWeight: Tick;
+  readonly guardGain: number;
   /** GDD §4.6: the first Stagger's delay, before the ladder halves it. */
   readonly firstStagger: number;
 }
@@ -26,9 +36,9 @@ export interface CombatRules {
 export const DEFAULT_RULES: CombatRules = {
   ultimate: 'immediate',
   guardCap: 40,
-  guardDecayPerTick: 1,
-  waitWeight: tick(3),
-  waitGuard: 3,
+  guardDecayEvery: 3,
+  guardWeight: tick(3),
+  guardGain: 3,
   firstStagger: 3,
 };
 

@@ -44,7 +44,9 @@ function carryTo(state: CombatState, to: Tick): CombatState {
   return {
     ...state,
     now: to,
-    actors: state.actors.map((actor) => decayGuard(actor, elapsed, state.rules.guardDecayPerTick)),
+    actors: state.actors.map((actor) =>
+      decayGuard(actor, { from: state.now, to, every: state.rules.guardDecayEvery }),
+    ),
   };
 }
 

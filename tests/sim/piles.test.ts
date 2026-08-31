@@ -96,7 +96,7 @@ describe('the Cooldown pile (GDD §4.9)', () => {
     expect(state.hand).not.toContain(LUNGE);
 
     while (state.now < 14 && state.outcome === 'ongoing') {
-      state = commit(state, { kind: 'wait' }).state;
+      state = commit(state, { kind: 'guard' }).state;
     }
 
     expect(state.cooldown).toHaveLength(0);
@@ -171,7 +171,7 @@ describe('drawing (GDD §4.1, §4.3)', () => {
     // The turn draw already filled the hand to the cap, so make room first —
     // Wait's draw is an extra one, not a replacement for the turn draw.
     const state = { ...opening, hand: opening.hand.slice(0, 2) };
-    const waited = reduce(state, { kind: 'wait' });
+    const waited = reduce(state, { kind: 'guard' });
     if (!waited.ok) throw new Error('wait is always legal');
 
     expect(waited.step.state.hand).toHaveLength(3);
@@ -180,7 +180,7 @@ describe('drawing (GDD §4.1, §4.3)', () => {
 
   it('fills the hand to the cap on the opening turn, so Wait cannot overdraw', () => {
     const state = opened(ALL_CARDS);
-    const waited = reduce(state, { kind: 'wait' });
+    const waited = reduce(state, { kind: 'guard' });
     if (!waited.ok) throw new Error('wait is always legal');
 
     expect(state.hand).toHaveLength(HAND_CAP);

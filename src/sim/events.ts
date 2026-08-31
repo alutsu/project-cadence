@@ -25,7 +25,7 @@ export type CombatEvent =
       readonly card: CardId;
       readonly weight: Tick;
     }
-  | { readonly kind: 'waited'; readonly at: Tick; readonly actor: ActorId }
+  | { readonly kind: 'guarded'; readonly at: Tick; readonly actor: ActorId }
   | { readonly kind: 'card_drawn'; readonly at: Tick; readonly card: CardId }
   | {
       readonly kind: 'draw_skipped';
