@@ -1,8 +1,8 @@
 # M0 — The Gate
 
-**Status:** run 2026-08-30 — **ambiguous** (§5); the Guard-readability pass is
-in, the one re-run is owed · **Build:** M0/S8 + Guard-readability pass ·
-**Traces to:** GDD §18 (M0 gate), §21 Risk 1
+**Status:** run 2026-08-30 — **ambiguous** (§5); the Guard and Stagger
+legibility passes are in, the one re-run is owed · **Build:** M0/S8 +
+legibility passes · **Traces to:** GDD §18 (M0 gate), §21 Risk 1
 
 > Play it for an hour with no gems at all. If moving your position in the turn
 > queue isn't fun by itself, stop. The gem system will not save it — it will
@@ -243,3 +243,30 @@ in `/sim` and read by the UI, never worked out on screen (CLAUDE.md §2.1).
 be a tool. If Guard is nearly always gone before the blow lands, question 4 is
 answered "no, because there is nothing to survive" — a tuning finding, not a
 presentation one, and the §4 note above is where it goes.
+
+### The Stagger legibility pass (2026-08-30)
+
+Reported during the same run, unprompted and outside the six questions: *"I
+can't see if an enemy will be staggered or not. Also what the 'Poise X' means
+on the rat and on the other enemies."*
+
+Two separate failures, both of them on one line of the silhouette.
+
+- **`POISE 8` was a number with no verb.** GDD §4.6 [AMD] builds the whole
+  mechanic on the player making one comparison — *"can this card break it?"* —
+  and never said what the number had to be compared against. It now reads
+  `POISE 8 · one hit of 8+`, which also carries the [AMD] rule that chip damage
+  never staggers however much of it lands.
+- **The Stagger verdict named the delay but not who takes it.** `STAGGER +3`
+  appeared only in the hover readout; with two rats on screen that is not an
+  answer. The enemy a hovered card would stagger now says `STAGGER +3 ticks` on
+  itself, in the player's own gold.
+- **The threshold printed is `effectivePoise`, not `actor.poise`** — the value
+  Brittle actually moves (GDD §4.5). The old line would have gone on printing a
+  threshold the reducer had stopped using, which is a P3 bug waiting for M1.
+
+**What to watch for in the re-run:** whether Stagger becomes a *planned* act
+rather than one noticed afterwards — the Warden's Poise of 20 against a hand
+where only Crush, Sunder and Cataclysm clear it is the fight that should now
+read as a puzzle rather than as arithmetic. If it still doesn't, the finding is
+that the deck, not the label, is the problem (§4, GDD §5.1 [AMD]).

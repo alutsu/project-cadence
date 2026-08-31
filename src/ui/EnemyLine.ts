@@ -1,9 +1,22 @@
 import Phaser from 'phaser';
 import { currentIntent, isAlive, type Actor } from '../sim/actor.ts';
+import type { ActionPreview } from '../sim/forecast.ts';
 import type { ActorId } from '../sim/ids.ts';
+import { effectivePoise } from '../sim/poise.ts';
 import type { CombatState } from '../sim/state.ts';
 import { describeStatuses } from './statusText.ts';
-import { COLORS, ENEMY_INK, FONT, FX, GUARD_INK, INK, LAYOUT, MUTED, TYPE } from './theme.ts';
+import {
+  COLORS,
+  ENEMY_INK,
+  FONT,
+  FX,
+  GUARD_INK,
+  INK,
+  LAYOUT,
+  MUTED,
+  PLAYER_INK,
+  TYPE,
+} from './theme.ts';
 
 export interface EnemyLineOptions {
   readonly scene: Phaser.Scene;
@@ -51,14 +64,14 @@ export class EnemyLine {
     this.container = options.scene.add.container(0, 0);
   }
 
-  render(state: CombatState, targeted: ActorId | null): void {
+  render(state: CombatState, targeted: ActorId | null, preview: ActionPreview | null): void {
     this.container.removeAll(true);
     this.silhouettes = [];
 
     for (const enemy of livingEnemies(state)) {
       const seat = enemySeat(state, enemy.id);
       if (seat === null) continue;
-      const view = this.silhouette(enemy, seat.x, enemy.id === targeted);
+      const view = this.silhouette({ enemy, x: seat.x, targeted: enemy.id === targeted, preview });
       this.container.add(view);
       this.silhouettes.push({ actor: enemy.id, view });
     }
@@ -82,7 +95,8 @@ export class EnemyLine {
     this.container.destroy(true);
   }
 
-  private silhouette(enemy: Actor, x: number, targeted: boolean): Phaser.GameObjects.Container {
+  private silhouette(options: SilhouetteOptions): Phaser.GameObjects.Container {
+    const { enemy, x, targeted, preview } = options;
     const scene = this.options.scene;
     const { width, height, centerY } = LAYOUT.enemies;
     const view = scene.add.container(x, centerY);
@@ -115,15 +129,14 @@ export class EnemyLine {
         .setOrigin(0.5, 0.5),
     );
 
-    // The Poise threshold is the number the player compares a card's damage to,
-    // so it is on the silhouette rather than in a tooltip (GDD §4.6, §15).
-    if (enemy.poise > 0) {
+    const poise = poiseLine(enemy, preview);
+    if (poise !== null) {
       view.add(
         scene.add
-          .text(0, height / 2 - 66, `POISE ${String(enemy.poise)}`, {
+          .text(0, height / 2 - 66, poise.text, {
             fontFamily: FONT,
             fontSize: TYPE.slotIntent,
-            color: MUTED,
+            color: poise.color,
           })
           .setOrigin(0.5, 0.5),
       );
@@ -174,4 +187,41 @@ export class EnemyLine {
 
     return view;
   }
+}
+
+interface SilhouetteOptions {
+  readonly enemy: Actor;
+  readonly x: number;
+  readonly targeted: boolean;
+  /** The hovered action, so the silhouette can answer for itself. */
+  readonly preview: ActionPreview | null;
+}
+
+/**
+ * The Poise line, or null for an actor nothing can stagger (GDD §4.6).
+ *
+ * Two failures of the M0 gate run live here. `POISE 20` alone is a number with
+ * no verb — it never said what a hit has to clear, so the one comparison §4.6
+ * builds the whole mechanic around could not be made. And the Stagger verdict
+ * only appeared in the hover readout, which names the delay but not *which*
+ * enemy takes it; with four silhouettes on screen that is not an answer.
+ *
+ * So the threshold states its requirement, and while a card is hovered the
+ * enemy that card would stagger says so on itself. Both numbers are the sim's:
+ * `effectivePoise` is the value Brittle actually moves (GDD §4.5), never
+ * `actor.poise`, which would go on printing the pre-Brittle threshold the
+ * reducer no longer uses (P3).
+ */
+export function poiseLine(
+  enemy: Actor,
+  preview: ActionPreview | null,
+): { readonly text: string; readonly color: string } | null {
+  const staggered = preview?.staggers.find((entry) => entry.actor === enemy.id);
+  if (staggered !== undefined) {
+    return { text: `STAGGER +${String(staggered.delay)} ticks`, color: PLAYER_INK };
+  }
+
+  if (enemy.poise <= 0) return null;
+  const threshold = String(effectivePoise(enemy));
+  return { text: `POISE ${threshold} · one hit of ${threshold}+`, color: MUTED };
 }

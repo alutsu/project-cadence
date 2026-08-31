@@ -137,8 +137,8 @@ export class CombatScene extends Phaser.Scene {
   }
 
   /**
-   * The ghost preview (GDD §4.2). Only the strip and the readout change — the
-   * hand must not be rebuilt under the pointer that is hovering it.
+   * The ghost preview (GDD §4.2). The strip, the enemies and the readout
+   * change; the hand must not be rebuilt under the pointer hovering it.
    */
   private previewCard(card: CardDefinition | null): void {
     const target = this.currentTarget();
@@ -163,6 +163,7 @@ export class CombatScene extends Phaser.Scene {
 
     const preview = previewAction(this.state, action);
     views.queue.render(this.state, preview);
+    views.enemies.render(this.state, this.target, preview);
     views.readout.render(label, preview);
   }
 
@@ -171,6 +172,7 @@ export class CombatScene extends Phaser.Scene {
     if (views === null) return;
 
     views.queue.render(this.state);
+    views.enemies.render(this.state, this.target, null);
     views.readout.render('', null);
   }
 
@@ -403,7 +405,7 @@ export class CombatScene extends Phaser.Scene {
 
     const over = this.state.outcome !== 'ongoing';
     views.queue.render(this.state);
-    views.enemies.render(this.state, this.target);
+    views.enemies.render(this.state, this.target, null);
     // The cards are inert once the fight is over, and the summary needs the
     // room they occupy.
     if (over) views.hand.hide();
