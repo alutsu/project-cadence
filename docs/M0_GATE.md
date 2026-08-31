@@ -271,6 +271,24 @@ where only Crush, Sunder and Cataclysm clear it is the fight that should now
 read as a puzzle rather than as arithmetic. If it still doesn't, the finding is
 that the deck, not the label, is the problem (§4, GDD §5.1 [AMD]).
 
+### The first action of every fight was silent (2026-08-30)
+
+Also from the run: *"I can't hear the sound."*
+
+The audio context was built from the scene's own `POINTER_DOWN` handler, and
+Phaser dispatches a game object's `pointerdown` *before* the scene-level one —
+so a card's strike, its impact and every enemy turn that resolved behind it were
+all raised against a context that did not exist yet. Every sound of the first
+action of every encounter was dropped, which is exactly the click that has to
+prove the sound is worth leaving on. It is built at the first sound now, which
+is inside the gesture either way.
+
+Measured off the fixed build, in case the hour still finds it thin: strikes peak
+at −16 dBFS, Wait at −21, and Stagger — the payoff moment — at −22, the quietest
+figure in the set. `VOLUME` is not a GDD number, so it can move if the hour says
+it should; the §1 note about listening for a Heavy card's pitch is the thing to
+judge it by.
+
 ### Telling two of the same enemy apart (2026-08-30)
 
 Also from the run: *"where there is more than one enemy of the same type, for

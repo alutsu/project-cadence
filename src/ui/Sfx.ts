@@ -37,18 +37,29 @@ const DEATH_TO_HZ = 70;
 const DEATH_MS = 520;
 
 /**
- * A voice for the combat screen. Silent until the browser hands over an audio
- * context, which it only does after a real gesture — so nothing is heard until
- * the player's first click, by design and by policy.
+ * A voice for the combat screen.
+ *
+ * The context is built at the first sound rather than from a separate unlock on
+ * the scene's pointer handler. Every sound here is raised synchronously inside
+ * a user gesture — a card click, the Wait button, a tuning key — which is the
+ * browser's whole condition for starting audio, so building it on demand meets
+ * the policy without a second mechanism to keep in step. Doing it from the
+ * scene's own `POINTER_DOWN` did not: Phaser dispatches a game object's
+ * `pointerdown` before the scene-level one, so the card's strike, its impact
+ * and every enemy turn that followed were all raised against a context that did
+ * not exist yet, and the first action of every encounter was silent.
  */
 export class Sfx {
   private context: AudioContext | null = null;
   private muted = false;
 
-  /** Call from a user gesture; browsers refuse to start audio without one. */
+  /**
+   * Pumps a context the *browser* suspended — backgrounding the tab does that,
+   * and an hour of playtesting (GDD §18) will hit it. Never builds one: outside
+   * a gesture that would only produce a context stuck suspended.
+   */
   unlock(): void {
-    this.context ??= new AudioContext();
-    if (this.context.state === 'suspended') void this.context.resume();
+    if (this.context !== null && this.context.state === 'suspended') void this.context.resume();
   }
 
   setMuted(muted: boolean): void {
@@ -119,7 +130,17 @@ export class Sfx {
 
   private ready(): AudioContext | null {
     if (this.muted) return null;
-    return this.context !== null && this.context.state === 'running' ? this.context : null;
+
+    const context = (this.context ??= new AudioContext());
+    // A context built inside a gesture comes up running. One the browser
+    // suspended does not, and resuming is asynchronous — so this sound is lost
+    // and the next one is heard, which is the right trade against holding a
+    // queue of stale sounds for a fight that has already moved on.
+    if (context.state !== 'running') {
+      void context.resume();
+      return null;
+    }
+    return context;
   }
 
   private tone(spec: ToneSpec): void {
