@@ -5,7 +5,7 @@ import { levelOf } from '../run/runFlow.ts';
 import { nodeRecord, runSummary } from '../run/telemetry.ts';
 import { startRun, type RunState } from '../run/RunState.ts';
 import type { CardId, NodeId } from '../sim/ids.ts';
-import type { RunSceneData } from './sceneData.ts';
+import { isRefreshable, type RunSceneData } from './sceneData.ts';
 
 /**
  * The run's owner (GDD §20.1's tree, CLAUDE.md §4.1).
@@ -106,12 +106,22 @@ export class RunScene extends Phaser.Scene {
       },
     };
 
-    // Stopped and restarted rather than swapped: a scene that keeps its board
-    // across two different encounters is a scene holding game state, and
-    // CLAUDE.md §4.1 says it may not.
-    if (this.active !== null && this.active !== next) this.scene.stop(this.active);
-    if (this.active === next) this.scene.stop(next);
+    // A scene already showing this kind of view is *refreshed*, not restarted.
+    // Restarting runs `init` again, which threw away everything the player had
+    // set up on that screen — crafting a gem closed the forge behind it, and
+    // the card they had picked went with it.
+    if (this.active === next) {
+      const showing: unknown = this.scene.get(next);
+      if (isRefreshable(showing)) {
+        showing.refresh(data);
+        return;
+      }
+    }
 
+    // A different screen, or one that cannot take a refresh: stop and relaunch.
+    // A scene that kept its board across two different encounters would be a
+    // scene holding game state, and CLAUDE.md §4.1 says it may not.
+    if (this.active !== null) this.scene.stop(this.active);
     this.active = next;
     this.scene.launch(next, data);
   }

@@ -41,3 +41,23 @@ export function runSceneData(value: unknown, scene: string): RunSceneData {
   }
   return value;
 }
+
+/**
+ * A scene that can be handed a new run without being restarted.
+ *
+ * `RunScene` used to stop and relaunch whatever was showing on every change,
+ * which is correct when the view *kind* changes and wrong when it does not: a
+ * relaunch runs `init` again, so anything the player had set up on that screen
+ * — a card picked in the forge, the forge being open at all — was thrown away
+ * by their own action. Crafting a gem closed the forge behind it.
+ *
+ * A scene that implements this keeps its own presentation state across a run
+ * change. It still holds no game state: the run arrives as data every time.
+ */
+export interface Refreshable {
+  refresh(data: RunSceneData): void;
+}
+
+export function isRefreshable(scene: unknown): scene is Refreshable {
+  return typeof scene === 'object' && scene !== null && 'refresh' in scene;
+}

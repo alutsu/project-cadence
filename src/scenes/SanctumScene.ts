@@ -5,7 +5,7 @@ import type { CardId } from '../sim/ids.ts';
 import { ForgeScreen, type ForgeAction } from '../ui/ForgeScreen.ts';
 import { SanctumView } from '../ui/SanctumView.ts';
 import { COLORS } from '../ui/theme.ts';
-import { runSceneData, type RunSceneData } from './sceneData.ts';
+import { runSceneData, type Refreshable, type RunSceneData } from './sceneData.ts';
 
 /**
  * The Sanctum (GDD §11).
@@ -22,13 +22,15 @@ import { runSceneData, type RunSceneData } from './sceneData.ts';
  * Wiring only. Every act goes through `performForgeAction`, which is the run's
  * to perform (CLAUDE.md §4.1).
  */
-export class SanctumScene extends Phaser.Scene {
+export class SanctumScene extends Phaser.Scene implements Refreshable {
   private payload: RunSceneData | null = null;
   private view: SanctumView | null = null;
   private forge: ForgeScreen | null = null;
   /** Which card and frame the next forge act applies to. Presentation state. */
   private card: CardId | null = null;
   private frameIndex = 0;
+  /** Why the last act did nothing, if it did nothing. */
+  private notice = '';
 
   constructor() {
     super('Sanctum');
@@ -38,6 +40,15 @@ export class SanctumScene extends Phaser.Scene {
     this.payload = runSceneData(data, 'SanctumScene');
     this.card = null;
     this.frameIndex = 0;
+  }
+
+  /**
+   * A new run, same screen. Keeps the picked card and whether the forge is
+   * open, because both are things the player set up and neither is game state.
+   */
+  refresh(data: RunSceneData): void {
+    this.payload = data;
+    this.render();
   }
 
   create(): void {
@@ -92,7 +103,17 @@ export class SanctumScene extends Phaser.Scene {
    */
   private act(action: ForgeAction): void {
     const performed = performForgeAction(this.run(), action);
-    if (performed !== null) this.payload?.dispatch({ kind: 'forge', run: performed });
+    if (performed === null) {
+      // An act the run refused. It has to *say* so: a key that silently does
+      // nothing is indistinguishable from one that is not wired up, which is
+      // what crafting looked like when the forge was closing itself.
+      this.notice = refusalFor(action, this.run());
+      this.render();
+      return;
+    }
+
+    this.notice = '';
+    this.payload?.dispatch({ kind: 'forge', run: performed });
     this.render();
   }
 
@@ -109,6 +130,9 @@ export class SanctumScene extends Phaser.Scene {
     keys.on('keydown-F', () => {
       this.forge?.toggle();
       this.render();
+    });
+    keys.on('keydown-Q', () => {
+      this.cycleFrame();
     });
     keys.on('keydown-C', () => {
       forgeAct('craft', FRAMES[this.frameIndex] ?? 'REPEAT');
@@ -136,13 +160,25 @@ export class SanctumScene extends Phaser.Scene {
     }
   }
 
-  /** Which deck card, and which frame, the next act applies to. */
+  /** Which deck card the next act applies to. */
   private pick(index: number): void {
     if (this.forge?.isOpen() !== true) return;
 
-    const distinct = [...new Set(this.run().deck)];
-    this.card = distinct[index] ?? this.card;
-    this.frameIndex = index % FRAMES.length;
+    this.card = [...new Set(this.run().deck)][index] ?? this.card;
+    this.notice = '';
+    this.render();
+  }
+
+  /**
+   * Which frame `C` would craft. On its own key, because a number used to do
+   * both — picking a card silently changed what you were about to craft, which
+   * is two decisions wearing one button.
+   */
+  private cycleFrame(): void {
+    if (this.forge?.isOpen() !== true) return;
+
+    this.frameIndex = (this.frameIndex + 1) % FRAMES.length;
+    this.notice = '';
     this.render();
   }
 
@@ -150,8 +186,33 @@ export class SanctumScene extends Phaser.Scene {
     if (this.payload?.view.kind !== 'sanctum') return;
 
     this.view?.render(this.run());
-    this.forge?.render(this.run(), this.card, FRAMES[this.frameIndex] ?? 'REPEAT');
+    this.forge?.render(this.run(), {
+      selected: this.card,
+      frame: FRAMES[this.frameIndex] ?? 'REPEAT',
+      notice: this.notice,
+    });
   }
 }
 
 const DIGITS: readonly string[] = ['ONE', 'TWO', 'THREE', 'FOUR', 'FIVE', 'SIX', 'SEVEN'];
+
+/**
+ * Why an act did nothing. Every branch names something the player can change,
+ * because "nothing happened" is the least useful thing an interface can say.
+ */
+function refusalFor(action: ForgeAction, run: RunState): string {
+  if (action.card === null && action.kind !== 'craft' && action.kind !== 'upgrade') {
+    return 'pick a card first — press 1 to 7';
+  }
+  if (action.kind === 'craft') return 'no material to craft with — win a fight first';
+  if (action.kind === 'upgrade') return 'three of one material are needed to make one of the next';
+  if (action.kind === 'seat') {
+    return run.pouch.length === 0
+      ? 'no gem to set — craft one with C'
+      : 'that card has no open socket — open one with S';
+  }
+  if (action.kind === 'unseat') return 'that card has no gem in it';
+  if (action.kind === 'reroll') return 'rerolling costs 1 insight, and you have none';
+
+  return 'that socket cannot be opened — the forge lists why above';
+}

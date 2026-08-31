@@ -32,6 +32,14 @@ export interface ForgeAction {
   readonly tier: GemTier;
 }
 
+/** What the player has set up on this screen. Presentation, not game state. */
+export interface ForgeSelection {
+  readonly selected: CardId | null;
+  readonly frame: Frame;
+  /** Why the last act did nothing, if it did nothing. */
+  readonly notice: string;
+}
+
 export interface ForgeOptions {
   readonly scene: Phaser.Scene;
   readonly onAct: (action: ForgeAction) => void;
@@ -79,7 +87,7 @@ export class ForgeScreen {
       })
       .setOrigin(0, 0);
     this.prompt = scene.add
-      .text(LAYOUT.width / 2, LAYOUT.height - 120, '', {
+      .text(LAYOUT.width / 2, LAYOUT.forge.promptY, '', {
         fontFamily: FONT,
         fontSize: TYPE.button,
         color: PLAYER_INK,
@@ -107,10 +115,12 @@ export class ForgeScreen {
    * of the screen rather than as a modal that steals the keyboard.
    */
   act(action: ForgeAction, run: RunState): void {
-    if (this.pending !== null) {
-      const armed = this.pending.action;
-      this.pending = null;
-      if (armed.kind === action.kind && armed.card === action.card) this.options.onAct(armed);
+    const armed = this.pending?.action;
+    this.pending = null;
+
+    // The same act again is the confirmation §15.2 asks for.
+    if (armed?.kind === action.kind && armed.card === action.card) {
+      this.options.onAct(armed);
       return;
     }
 
@@ -119,13 +129,18 @@ export class ForgeScreen {
       return;
     }
 
-    // Armed, not taken. The caller re-renders, which is what puts the warning
-    // on screen — §15.2 wants the second press to be an informed one.
+    // A *different* irreversible act arms itself rather than merely cancelling
+    // the last one. Cancelling silently meant changing your mind cost three
+    // presses and looked like the key had done nothing.
+    //
+    // Armed, not taken: the caller re-renders, which is what puts the warning on
+    // screen, because §15.2 wants the second press to be an informed one.
     this.pending = { action, warning: warningFor(action, run) };
   }
 
-  render(run: RunState, selected: CardId | null, frame: Frame): void {
+  render(run: RunState, showing: ForgeSelection): void {
     if (!this.open) return;
+    const { selected, frame, notice } = showing;
 
     this.body.setText(
       [
@@ -141,8 +156,10 @@ export class ForgeScreen {
       ].join('\n'),
     );
 
-    this.prompt.setText(this.pending === null ? 'F  ·  leave the forge' : this.pending.warning);
-    this.prompt.setColor(this.pending === null ? MUTED : DANGER_INK);
+    // A pending confirmation outranks a notice; both outrank the resting line.
+    const line = this.pending?.warning ?? (notice.length > 0 ? notice : 'F  ·  leave the forge');
+    this.prompt.setText(line);
+    this.prompt.setColor(this.pending !== null || notice.length > 0 ? DANGER_INK : MUTED);
   }
 
   destroy(): void {
@@ -188,7 +205,7 @@ function selectionLines(run: RunState, selected: CardId | null, frame: Frame): r
     `  R  reroll a gem's numbers   ${run.insight > 0 ? 'costs 1 insight, keeps the frame' : '— no insight'}`,
     `  U  three of a material become one of the next   ${held >= 3 ? 'ready' : '— not enough'}`,
     '',
-    `  the frame C would craft: ${frame}  —  ${FRAME_NOTES[frame]}   (a number key also changes this)`,
+    `  Q  the frame C would craft: ${frame}  —  ${FRAME_NOTES[frame]}`,
   ];
 }
 
