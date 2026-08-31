@@ -6,7 +6,7 @@ import { createRng, type Rng } from '../sim/rng.ts';
 
 export { PLAYER, RAT, WARDEN } from '../data/encounters.ts';
 
-export const LIGHT = cardId('strike');
+export const LIGHT = cardId('lunge');
 export const STANDARD = cardId('cleave');
 export const HEAVY = cardId('crush');
 

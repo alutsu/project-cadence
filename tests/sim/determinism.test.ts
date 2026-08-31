@@ -55,7 +55,7 @@ describe('determinism (GDD §20.2, CLAUDE.md §7.2)', () => {
       // A three-card deck cannot fill the five-card opening hand, and the pile
       // is never topped up early (GDD §4.9).
       't0 drew crush',
-      't0 drew strike',
+      't0 drew lunge',
       't0 drew cleave',
       't0 no draw (draw_pile_empty)',
       't0 no draw (draw_pile_empty)',
@@ -96,12 +96,12 @@ describe('determinism (GDD §20.2, CLAUDE.md §7.2)', () => {
       't17 poison player ticks 2',
       't19 turn player',
       't19 no draw (draw_pile_empty)',
-      't19 played player strike w4',
-      't19 damage player -> rat 9',
+      't19 played player lunge w4',
+      't19 damage player -> rat 11',
       // The second Stagger of the encounter, worth one tick less than the
       // first — the ladder halving down toward its floor (GDD §4.6).
       't19 staggered rat +2',
-      't19 cooldown strike -> t27',
+      't19 cooldown lunge -> t27',
       't19 scheduled player -> t23',
       // Poison ends by running out of magnitude, not on a clock (GDD §4.5).
       't22 poison player ticks 1',

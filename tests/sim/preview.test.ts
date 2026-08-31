@@ -8,6 +8,7 @@ import { previewAction, type QueueSlot } from '../../src/sim/forecast.ts';
 import { cardId, type CardId } from '../../src/sim/ids.ts';
 import { createRng, type Rng } from '../../src/sim/rng.ts';
 import { findActor, type CombatState } from '../../src/sim/state.ts';
+import { damagePerTarget } from '../../src/sim/targeting.ts';
 
 const CATALOGUE = m0Catalogue();
 const ALL_CARDS: readonly CardId[] = Object.keys(CATALOGUE).map(cardId);
@@ -141,7 +142,10 @@ describe('ghost preview equivalence (CLAUDE.md §7.1, GDD §4.2)', () => {
       .map((event) => ({ target: event.target, amount: event.amount }));
 
     expect(preview.hits).toEqual(dealt);
-    expect(preview.hits[0]?.amount).toBe(CATALOGUE[card]?.damage);
+    // Not the printed figure: an AoE lands 60% of it on each enemy (GDD §4.8).
+    const definition = CATALOGUE[card];
+    if (definition === undefined) throw new Error('card is not in the catalogue');
+    expect(preview.hits[0]?.amount).toBe(damagePerTarget(definition));
   });
 });
 

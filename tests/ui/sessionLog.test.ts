@@ -6,7 +6,7 @@ import { SessionLog } from '../../src/ui/SessionLog.ts';
 
 const PLAYER = actorId('player');
 const RAT = actorId('rat');
-const STRIKE = cardId('strike');
+const STRIKE = cardId('lunge');
 const CRUSH = cardId('crush');
 
 const EVENTS: readonly CombatEvent[] = [

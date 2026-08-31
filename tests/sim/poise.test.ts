@@ -29,8 +29,8 @@ function actor(state: CombatState, id: typeof RAT) {
 
 describe('Poise is a threshold, not a pool (GDD §4.6 [AMD])', () => {
   it('staggers on one hit at or above the threshold', () => {
-    const state = opened([cardId('strike')]);
-    const played = reduce(state, { kind: 'play', card: cardId('strike'), target: RAT });
+    const state = opened([cardId('lunge')]);
+    const played = reduce(state, { kind: 'play', card: cardId('lunge'), target: RAT });
     if (!played.ok) throw new Error('strike should be legal');
 
     // Strike deals 9; the rat's threshold is 8.
@@ -40,13 +40,13 @@ describe('Poise is a threshold, not a pool (GDD §4.6 [AMD])', () => {
   });
 
   it('never staggers on chip damage, however much of it lands', () => {
-    const state = opened([cardId('feint'), cardId('feint'), cardId('feint')]);
+    const state = opened([cardId('sweep'), cardId('sweep'), cardId('sweep')]);
 
-    // Feint deals 6 into a threshold of 8. Three of them still never break it —
+    // Sweep deals 6 to each into a threshold of 8. Three still never break it —
     // that is the whole difference between a threshold and a pool.
     let current = state;
     for (let hit = 0; hit < 3; hit += 1) {
-      const played = reduce(current, { kind: 'play', card: cardId('feint'), target: RAT });
+      const played = reduce(current, { kind: 'play', card: cardId('sweep'), target: RAT });
       if (!played.ok) break;
       expect(played.step.events.some((event) => event.kind === 'staggered')).toBe(false);
       current = advanceToDecision(played.step.state).state;
@@ -111,13 +111,13 @@ describe('the diminishing ladder (GDD §4.6 [FIX])', () => {
   });
 
   it('applies Brittle by lowering the threshold, never below one', () => {
-    const state = opened([cardId('feint')]);
+    const state = opened([cardId('sweep')]);
     const brittle = {
       ...actor(state, RAT),
       statuses: [{ kind: 'brittle' as const, magnitude: 4, expiresAt: tick(50), nextProcAt: null }],
     };
 
-    // Threshold 8 minus Brittle 4 is 4, so a 6-damage Feint now breaks it.
+    // Threshold 8 minus Brittle 4 is 4, so Sweep's 6 now breaks it.
     expect(breaksPoise(actor(state, RAT), 6)).toBe(false);
     expect(breaksPoise(brittle, 6)).toBe(true);
   });

@@ -1,4 +1,4 @@
-import { m0Catalogue } from '../data/cards.ts';
+import { m0Catalogue, m0Deck } from '../data/cards.ts';
 import {
   CHAIN_SIZE,
   ENCOUNTERS,
@@ -9,7 +9,7 @@ import {
 import type { ActorSeed } from '../sim/combat.ts';
 import { advanceToDecision, reduce, startCombat } from '../sim/combat.ts';
 import type { CombatEvent } from '../sim/events.ts';
-import { cardId, type CardId } from '../sim/ids.ts';
+import type { CardId } from '../sim/ids.ts';
 import { createRng } from '../sim/rng.ts';
 import type { Policy } from './policy.ts';
 import { POLICIES } from './policy.ts';
@@ -52,7 +52,7 @@ export function playEncounter(spec: PlaySpec): EncounterOutcome {
   const started = startCombat({
     actors: spec.actors,
     catalogue,
-    deck: Object.keys(catalogue).map(cardId),
+    deck: m0Deck(catalogue),
     rng: createRng(spec.seed, 'combat'),
   });
 

@@ -1,5 +1,5 @@
 import type { CardCatalogue, CardDefinition, CardTargeting } from '../sim/card.ts';
-import { cardId } from '../sim/ids.ts';
+import { cardId, type CardId } from '../sim/ids.ts';
 import { WEIGHT_CLASSES, isWeightClass } from '../sim/weightClass.ts';
 import cardData from './cards.m0.json' with { type: 'json' };
 
@@ -92,9 +92,48 @@ export function parseCardCatalogue(input: unknown): ParseResult<CardCatalogue> {
   return { ok: true, value: catalogue };
 }
 
-/** The M0 deck, validated. Throws loudly rather than booting with bad data. */
+/**
+ * The list the player actually holds, in authored order before the shuffle.
+ *
+ * Separate from the catalogue because they answer different questions: the
+ * catalogue is which cards *exist*, the deck is which ones you were *given*
+ * (P2). Repeats are the point — M0 has only Weight class, damage and reach to
+ * tell cards apart, so a twelve-distinct deck could only be twelve cards where
+ * nine are never the right play. Twelve cards drawn from seven says the same
+ * thing honestly.
+ */
+export function parseDeck(
+  input: unknown,
+  catalogue: CardCatalogue,
+): ParseResult<readonly CardId[]> {
+  if (!isRecord(input) || !Array.isArray(input.deck)) {
+    return { ok: false, errors: ['card data has no "deck" array'] };
+  }
+
+  const errors: string[] = [];
+  const deck: CardId[] = [];
+  for (const [position, entry] of input.deck.entries()) {
+    if (typeof entry !== 'string' || catalogue[entry] === undefined) {
+      errors.push(`deck slot ${String(position)} names no card: ${JSON.stringify(entry)}`);
+      continue;
+    }
+    deck.push(cardId(entry));
+  }
+
+  return errors.length > 0 ? { ok: false, errors } : { ok: true, value: deck };
+}
+
+/** The M0 catalogue, validated. Throws loudly rather than booting with bad data. */
 export function m0Catalogue(): CardCatalogue {
   const parsed = parseCardCatalogue(cardData);
   if (!parsed.ok) throw new Error(`cards.m0.json is invalid:\n- ${parsed.errors.join('\n- ')}`);
+  return parsed.value;
+}
+
+/** The M0 deck, validated against the catalogue it draws from. */
+export function m0Deck(catalogue: CardCatalogue = m0Catalogue()): readonly CardId[] {
+  const parsed = parseDeck(cardData, catalogue);
+  if (!parsed.ok)
+    throw new Error(`cards.m0.json deck is invalid:\n- ${parsed.errors.join('\n- ')}`);
   return parsed.value;
 }

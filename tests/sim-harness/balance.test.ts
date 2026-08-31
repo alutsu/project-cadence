@@ -66,15 +66,10 @@ describe('the balance ledger (GDD §19, CLAUDE.md §7.3)', () => {
     expect(causes).toBeGreaterThanOrEqual(blows);
   });
 
-  it('names the cards a sibling strictly beats', () => {
-    const beaten = dominatedCards();
-
-    // Every Light card but Lunge: they share Weight 4 and Recovery 8 from the
-    // class table, and their tags are inert in M0, so only damage differs.
-    expect(beaten.find((entry) => entry.card === 'Feint')?.beatenBy).toContain('Lunge');
-    expect(beaten.map((entry) => entry.card)).not.toContain('Lunge');
-    // An AoE is compared to the other AoE of its class, never to a
-    // single-target card it does not trade against (GDD §4.8).
-    expect(beaten.find((entry) => entry.card === 'Sweep')?.beatenBy).toEqual(['Cleave']);
+  it('finds nothing a sibling strictly beats', () => {
+    // The deck was re-spread onto the axes M0 actually has, so this list is the
+    // regression guard: a card added into an occupied (class, reach) bucket
+    // would be dead on arrival and this is what says so.
+    expect(dominatedCards()).toEqual([]);
   });
 });

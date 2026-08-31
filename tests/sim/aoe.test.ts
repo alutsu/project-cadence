@@ -78,21 +78,22 @@ describe('cards that hit the whole line (GDD §4.8)', () => {
     expect(staggeredActors(play(state, 'cleave').events)).toEqual([RAT]);
   });
 
-  it('is worse than a single-target card against one enemy, and better against three', () => {
+  it('is worse than its single-target sibling alone, and better against three', () => {
     const solo = ENCOUNTERS[1];
     const crowd = ENCOUNTERS[5];
     if (solo === undefined || crowd === undefined) throw new Error('missing encounters');
 
-    const alone = opened(solo.actors, ['sweep', 'pin']);
+    const alone = opened(solo.actors, ['sweep', 'lunge']);
     const target = livingEnemies(alone)[0]?.id ?? never();
     const swept = blows(play(alone, 'sweep', target).events);
-    const pinned = blows(play(alone, 'pin', target).events);
-    expect(total(swept)).toBeLessThan(total(pinned));
+    const lunged = blows(play(alone, 'lunge', target).events);
+    expect(total(swept)).toBeLessThan(total(lunged));
 
     const many = opened(crowd.actors, ['sweep']);
     expect(livingEnemies(many)).toHaveLength(3);
+    // Sweep prints 10, lands 6 on each of three: 18, against Lunge's 11.
     expect(total(blows(play(many, 'sweep', livingEnemies(many)[0]?.id ?? never()).events))).toBe(
-      21,
+      18,
     );
   });
 

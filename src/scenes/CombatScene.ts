@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { m0Catalogue } from '../data/cards.ts';
+import { m0Catalogue, m0Deck } from '../data/cards.ts';
 import { CHAIN_SIZE, ENCOUNTERS, PLAYER, PLAYER_MAX_HP, startsChain } from '../data/encounters.ts';
 import type { Action } from '../sim/actions.ts';
 import { isAlive } from '../sim/actor.ts';
@@ -595,7 +595,7 @@ function openingState({ index, rules, hp }: OpeningSpec): Opening {
       actor.side === 'player' ? { ...actor, hp } : actor,
     ),
     catalogue,
-    deck: Object.keys(catalogue).map(cardId),
+    deck: m0Deck(catalogue),
     // One stream in M0; the map and gem streams arrive with the run layer.
     rng: createRng(SESSION_SEED + index, 'combat'),
     rules,

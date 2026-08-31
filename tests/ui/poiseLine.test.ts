@@ -60,11 +60,11 @@ describe("the enemy's Poise line (GDD §4.6)", () => {
   });
 
   it('keeps the threshold when the hovered card falls short of it', () => {
-    const state = opening(['feint']);
-    const preview = previewAction(state, { kind: 'play', card: cardId('feint'), target: RAT });
-    if (preview === null) throw new Error('feint should be legal');
+    const state = opening(['sweep']);
+    const preview = previewAction(state, { kind: 'play', card: cardId('sweep'), target: RAT });
+    if (preview === null) throw new Error('sweep should be legal');
 
-    // Feint deals 6 into Poise 7. Chip damage never staggers (GDD §4.6 [AMD]).
+    // Sweep deals 6 to each into Poise 8. Chip never staggers (GDD §4.6 [AMD]).
     expect(preview.staggers).toEqual([]);
     expect(poiseLine(actor(state, RAT), preview)?.text).toContain('POISE');
   });

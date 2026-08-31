@@ -1,20 +1,15 @@
 {
-  "_comment": "Provisional M0 deck (GDD §5.1 [AMD], docs/M0_PLAN.md D1). Not a design commitment: whatever survives the M0 gate is promoted into the GDD as the real skill table. Weight and Recovery are inherited from the class table in GDD §4.1 — a card never states them itself.",
+  "_comment": "Provisional M0 deck (GDD §5.1 [AMD], docs/M0_PLAN.md D1). Not a design commitment: whatever survives the M0 gate is promoted into the GDD as the real skill table. Weight and Recovery are inherited from the class table in GDD §4.1 — a card never states them itself. M0 has three axes and no more: Weight class, damage, and reach. Tags are inert until the Weave lands in M1, so two cards sharing a class and a reach differ only in damage and the smaller one is never worth playing. The catalogue therefore holds one card per (class, reach) and the deck below repeats them.",
   "cards": [
-    { "id": "strike", "name": "Strike", "class": "light", "damage": 9, "tags": ["Physical"] },
     { "id": "lunge", "name": "Lunge", "class": "light", "damage": 11, "tags": ["Physical"] },
-    { "id": "feint", "name": "Feint", "class": "light", "damage": 6, "tags": ["Physical"] },
-    { "id": "dart", "name": "Dart", "class": "light", "damage": 8, "tags": ["Physical"] },
-    { "id": "riposte", "name": "Riposte", "class": "light", "damage": 10, "tags": ["Physical"] },
     {
-      "id": "cleave",
-      "name": "Cleave",
-      "class": "standard",
-      "damage": 14,
+      "id": "sweep",
+      "name": "Sweep",
+      "class": "light",
+      "damage": 10,
       "targeting": "all",
       "tags": ["Physical"]
     },
-    { "id": "pin", "name": "Pin", "class": "standard", "damage": 13, "tags": ["Physical"] },
     {
       "id": "hammerfall",
       "name": "Hammerfall",
@@ -23,15 +18,22 @@
       "tags": ["Physical"]
     },
     {
-      "id": "sweep",
-      "name": "Sweep",
+      "id": "cleave",
+      "name": "Cleave",
       "class": "standard",
-      "damage": 12,
+      "damage": 14,
       "targeting": "all",
       "tags": ["Physical"]
     },
     { "id": "crush", "name": "Crush", "class": "heavy", "damage": 24, "tags": ["Physical"] },
-    { "id": "sunder", "name": "Sunder", "class": "heavy", "damage": 22, "tags": ["Physical"] },
+    {
+      "id": "sunder",
+      "name": "Sunder",
+      "class": "heavy",
+      "damage": 22,
+      "targeting": "all",
+      "tags": ["Physical"]
+    },
     {
       "id": "cataclysm",
       "name": "Cataclysm",
@@ -40,5 +42,20 @@
       "targeting": "all",
       "tags": ["Physical"]
     }
+  ],
+  "_deckComment": "Twelve cards, and the same Weight curve the twelve-distinct deck had: five Light, four Standard, two Heavy, one Ultimate. Repeats rather than near-duplicates — a second Lunge is another Lunge, which is honest, where a Strike was a Lunge you would never choose.",
+  "deck": [
+    "lunge",
+    "lunge",
+    "lunge",
+    "sweep",
+    "sweep",
+    "hammerfall",
+    "hammerfall",
+    "cleave",
+    "cleave",
+    "crush",
+    "sunder",
+    "cataclysm"
   ]
 }

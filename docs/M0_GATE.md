@@ -71,18 +71,19 @@ should beat**, not as the difficulty itself.
 `npm run sim -- --report --seeds 100` adds a per-card and per-enemy breakdown
 underneath, which is what §4's findings below are measured from.
 
-**[2026-08-30, 100 seeds]** Every policy now dies in **fight 3**, on the HP the
-first two left it:
+**[2026-08-30, 100 seeds, after the deck re-spread]**
 
 | Policy | clears fight 3 | clears fight 5 |
 |---|---|---|
 | `leftmost` — plays hand slot 0, always | 0% | 0% |
 | `greedy` — biggest expected damage in hand | 0% | 0% |
-| `tempo` — best expected damage per tick of Weight | 4% | 2% |
-| `focus` — tempo, and kills the weakest enemy first | 4% | 3% |
+| `tempo` — best expected damage per tick of Weight | 36% | 21% |
+| `focus` — tempo, and kills the weakest enemy first | 36% | 29% |
 
 Every one of the six is won 100% of the time *entered at full HP* (fight 6
-excepted, which `focus` wins 56%). The set is not hard; the **chain** is.
+excepted, which `focus` wins 60%). The set is not hard; the **chain** is — and
+`leftmost` now clearing nothing while `tempo` clears a third of the time is the
+widest that gap has been, which is the claim under test.
 
 The gap between `leftmost` and `focus` is the whole claim under test: choosing
 which card and which target should be worth real ground. It is currently worth
@@ -169,8 +170,8 @@ point at the same knob (`J`/`K`, decay), and the hour is the place to settle it.
 **[2026-08-30] The solo Warden now has exactly one key, by one point.** Making
 Cleave, Sweep and Cataclysm AoE (GDD §4.8) drops Cataclysm from 44 to 26, and
 fight 2's Warden is scaled to Poise 25 — so Cataclysm is the only card in the
-deck that can stagger it, and it clears by a single point. Crush (24) and Sunder
-(22) no longer can. That is a Weight-16, Recovery-60 answer to a fight that runs
+deck that can stagger it, and it clears by a single point. Crush (24) no longer
+can, and after the re-spread Sunder is an AoE landing 13. That is a Weight-16, Recovery-60 answer to a fight that runs
 on a 16-tick wind-up, which may be the tension §5 answer 5 already liked or may
 be a fight with one line in it. It is a *scaling* finding, not an AoE one:
 `SOLO_LEVEL` is what put the Warden at 25, and lowering it is the lever.
@@ -199,13 +200,36 @@ straight 40% damage cut and nothing is bought back. Only fight 6 improves
 as written — it is the *deck*, not the rule, that has three AoE cards in a set
 that is mostly duels.
 
-**[2026-08-30] Nine of the twelve cards are strictly dominated.** Cards in a
-Weight class share Weight and Recovery from the §4.1 table, and M0 tags are
-inert, so within a class and reach only damage differs and the lower number is
-never the right play. Lunge beats every other Light; Hammerfall beats Pin;
-Crush beats Sunder; Cleave beats Sweep. This is the arithmetic behind gate
-answer 6 — the deck reads as variety and plays as four cards. §5.1 [AMD] already
-says the M0 deck is provisional; this is what has to change about it.
+**[2026-08-30] Nine of the twelve cards were strictly dominated — fixed.** Cards
+in a Weight class share Weight and Recovery from the §4.1 table, and M0 tags are
+inert, so within a class and reach only damage differs and the lower number was
+never the right play. Lunge beat every other Light; Hammerfall beat Pin; Crush
+beat Sunder; Cleave beat Sweep. The deck reads as variety and played as four
+cards, which is the arithmetic behind gate answer 6.
+
+The catalogue is now **one card per (Weight class × reach)** — the most a
+non-dominated M0 deck can hold, since those are the only axes the milestone has
+— and the twelve the player holds are repeats drawn from those seven:
+
+| | one enemy | all enemies |
+|---|---|---|
+| Light (W4/R8) | Lunge 11 ×3 | Sweep 6 each ×2 |
+| Standard (W6/R14) | Hammerfall 16 ×2 | Cleave 8 each ×2 |
+| Heavy (W10/R26) | Crush 24 ×1 | Sunder 13 each ×1 |
+| Ultimate (W16/R60) | — | Cataclysm 26 each ×1 |
+
+Each AoE beats its single-target sibling from two enemies on, which is one rule
+to learn rather than four numbers to compare. The Weight curve is unchanged
+(5 Light, 4 Standard, 2 Heavy, 1 Ultimate), so hand density and the shape of a
+turn are the same. Measured after: **nothing dominated, nothing left unplayed**,
+every card picked at least 10% of the hands that held it, and damage per tick
+spread narrowed from 1.50–3.10 to 2.31–3.06.
+
+**What to watch for in the re-run:** whether a second Lunge in hand feels
+different from the Strike it replaced. Repeats are honest — a Strike was a Lunge
+you would never choose — but if the hand now reads as *thinner* rather than
+clearer, the finding is that M0 cannot carry twelve cards and the deck should be
+seven (§5.1 [AMD]).
 
 These are the numbers the GDD itself flags as guesses. The tuning console exists
 so they can be chased inside the hour rather than between builds.
@@ -319,8 +343,8 @@ Two separate failures, both of them on one line of the silhouette.
 
 **What to watch for in the re-run:** whether Stagger becomes a *planned* act
 rather than one noticed afterwards. Fight 4 is the one to judge it on — the
-Warden there has Poise 20, and Crush, Sunder and Cataclysm all clear it, so
-there is a choice to make. If it still doesn't read, the finding is that the
+Warden there has Poise 20, and Crush (24) and Cataclysm (26) clear it while
+Hammerfall (16) and Sunder (13 each) do not, so there is a choice to make. If it still doesn't read, the finding is that the
 deck, not the label, is the problem (§4, GDD §5.1 [AMD]).
 
 ### The first action of every fight was silent (2026-08-30)

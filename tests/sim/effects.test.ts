@@ -18,7 +18,7 @@ function opened(playerSpeed = 100): CombatState {
   const started = startCombat({
     actors: [{ ...player, baseSpeed: playerSpeed }, rat],
     catalogue: m0Catalogue(),
-    deck: [cardId('strike')],
+    deck: [cardId('lunge')],
     rng: createRng(1, 'combat'),
   });
   return advanceToDecision(started.state).state;

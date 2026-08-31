@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { m0Catalogue } from '../../src/data/cards.ts';
+import { m0Catalogue, m0Deck } from '../../src/data/cards.ts';
 import { soloRat } from '../../src/data/encounters.ts';
 import type { Action } from '../../src/sim/actions.ts';
 import { advanceToDecision, reduce, startCombat, type CombatStep } from '../../src/sim/combat.ts';
@@ -17,9 +17,10 @@ import type { CombatState } from '../../src/sim/state.ts';
 import { tick } from '../../src/sim/tick.ts';
 
 const CATALOGUE = m0Catalogue();
-const ALL_CARDS: readonly CardId[] = Object.keys(CATALOGUE).map(cardId);
+/** The authored twelve, not one of each: a hand-full test needs the depth. */
+const ALL_CARDS: readonly CardId[] = m0Deck(CATALOGUE);
 const CRUSH = cardId('crush');
-const STRIKE = cardId('strike');
+const LUNGE = cardId('lunge');
 
 function opened(deck: readonly CardId[], seed = 1): CombatState {
   const started = startCombat({
@@ -90,28 +91,63 @@ describe('the Cooldown pile (GDD §4.9)', () => {
     if (target === undefined) throw new Error('no enemy');
 
     // Strike: Weight 4, Recovery 8. Played at t6, due back at t14.
-    let state = commit(opened([STRIKE]), { kind: 'play', card: STRIKE, target }).state;
-    expect(state.hand).not.toContain(STRIKE);
+    let state = commit(opened([LUNGE]), { kind: 'play', card: LUNGE, target }).state;
+    expect(state.hand).not.toContain(LUNGE);
 
     while (state.now < 14 && state.outcome === 'ongoing') {
       state = commit(state, { kind: 'wait' }).state;
     }
 
     expect(state.cooldown).toHaveLength(0);
-    expect(state.hand).toContain(STRIKE);
+    expect(state.hand).toContain(LUNGE);
   });
 
   it('never reshuffles early — an empty pile simply draws nothing', () => {
-    const state = opened([STRIKE]);
+    const state = opened([LUNGE]);
     const target = soloRat()[1]?.id;
     if (target === undefined) throw new Error('no enemy');
 
-    const played = commit(state, { kind: 'play', card: STRIKE, target });
+    const played = commit(state, { kind: 'play', card: LUNGE, target });
 
     expect(played.state.hand).toHaveLength(0);
     expect(played.state.draw).toHaveLength(0);
     expect(played.events).toContainEqual(
       expect.objectContaining({ kind: 'draw_skipped', reason: 'draw_pile_empty' }),
+    );
+  });
+});
+
+describe('two copies of one card (GDD §5.1)', () => {
+  it('plays one and leaves the other in hand, each on its own clock', () => {
+    // The M0 deck holds three Lunges. Every pile is keyed by card id, so this
+    // is the case where that could quietly collapse two cards into one.
+    const state = opened([LUNGE, LUNGE]);
+    const target = state.actors.find((actor) => actor.side === 'enemy');
+    if (target === undefined) throw new Error('no enemy to strike');
+    expect(state.hand).toEqual([LUNGE, LUNGE]);
+
+    const played = commit(state, { kind: 'play', card: LUNGE, target: target.id });
+
+    expect(played.state.hand).toEqual([LUNGE]);
+    expect(played.state.cooldown).toHaveLength(1);
+  });
+
+  it('returns them one at a time, in the order they were spent', () => {
+    const recovery = CATALOGUE.lunge?.recovery;
+    if (recovery === undefined) throw new Error('lunge is not in the catalogue');
+    const cooling = {
+      ...opened([LUNGE, LUNGE]),
+      cooldown: [
+        { card: LUNGE, returnTick: tick(10) },
+        { card: LUNGE, returnTick: tick(20) },
+      ],
+    };
+
+    const early = returnDueCards(cooling, tick(10));
+
+    expect(early.state.cooldown).toEqual([{ card: LUNGE, returnTick: 20 }]);
+    expect(early.state.draw.filter((card) => card === LUNGE)).toHaveLength(
+      cooling.draw.filter((card) => card === LUNGE).length + 1,
     );
   });
 });
@@ -160,6 +196,6 @@ describe('the auto-Wait condition (GDD §4.3)', () => {
   });
 
   it('reports a playable card whenever the hand holds one', () => {
-    expect(hasPlayableCard([STRIKE], CATALOGUE)).toBe(true);
+    expect(hasPlayableCard([LUNGE], CATALOGUE)).toBe(true);
   });
 });

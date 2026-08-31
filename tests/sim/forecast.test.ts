@@ -11,7 +11,7 @@ function opened(actors: CombatSetup['actors']): CombatState {
   const started = startCombat({
     actors,
     catalogue: m0Catalogue(),
-    deck: [cardId('strike')],
+    deck: [cardId('lunge')],
     rng: createRng(1, 'combat'),
   });
   return advanceToDecision(started.state).state;

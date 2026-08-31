@@ -98,8 +98,8 @@ describe('Ultimate rules (GDD §22 Q1)', () => {
   it('leaves every non-Ultimate card alone under all three rules', () => {
     for (const rule of ['immediate', 'windup', 'refund'] as const) {
       const state = opened(rule);
-      const withStrike = { ...state, hand: [cardId('strike')] };
-      const result = reduce(withStrike, { kind: 'play', card: cardId('strike'), target: RAT });
+      const withStrike = { ...state, hand: [cardId('lunge')] };
+      const result = reduce(withStrike, { kind: 'play', card: cardId('lunge'), target: RAT });
       if (!result.ok) throw new Error('strike should be legal');
 
       expect(findActor(result.step.state, PLAYER)?.nextActTick).toBe(state.now + 4);

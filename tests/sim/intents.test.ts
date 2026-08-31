@@ -113,7 +113,7 @@ describe('the archetypes carry their signature (GDD §12.2)', () => {
 
     // Strike deals 9 into a threshold of 8 — the archetype is the tutorial for
     // Stagger, so a starter card has to be able to break it (GDD §12.2).
-    expect(CATALOGUE.strike?.damage).toBeGreaterThanOrEqual(rat.poise);
+    expect(CATALOGUE.lunge?.damage).toBeGreaterThanOrEqual(rat.poise);
   });
 });
 

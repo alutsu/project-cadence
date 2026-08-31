@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { m0Catalogue, parseCardCatalogue } from '../../src/data/cards.ts';
+import { m0Catalogue, m0Deck, parseCardCatalogue, parseDeck } from '../../src/data/cards.ts';
 import { WEIGHT_CLASSES } from '../../src/sim/weightClass.ts';
 
 const VALID_CARD = { id: 'strike', name: 'Strike', class: 'light', damage: 9, tags: ['Physical'] };
@@ -47,14 +47,41 @@ describe('card data validation (CLAUDE.md §3.3)', () => {
 });
 
 describe('the provisional M0 deck (GDD §5.1 [AMD], plan D1)', () => {
-  it('loads, and holds the twelve cards the plan specifies', () => {
+  it('holds one card per Weight class and reach, and no second one', () => {
     const catalogue = m0Catalogue();
-    const byClass = Object.values(catalogue).reduce<Record<string, number>>(
-      (tally, card) => ({ ...tally, [card.weightClass]: (tally[card.weightClass] ?? 0) + 1 }),
-      {},
-    );
+    const buckets = Object.values(catalogue).map((card) => `${card.weightClass}/${card.targeting}`);
 
-    expect(Object.keys(catalogue)).toHaveLength(12);
+    // M0 has three axes: Weight class, damage and reach. A class fixes Weight
+    // and Recovery (GDD §4.1) and tags are inert until M1, so two cards sharing
+    // a class and a reach differ only in damage — and the smaller one is never
+    // the right play. One per bucket is the most a non-dominated M0 deck can
+    // hold, and this is the test that keeps a thirteenth from creeping back.
+    expect(new Set(buckets).size).toBe(buckets.length);
+  });
+
+  it('deals the twelve the player holds out of those seven', () => {
+    const catalogue = m0Catalogue();
+    const deck = m0Deck(catalogue);
+    const byClass = deck.reduce<Record<string, number>>((tally, id) => {
+      const card = catalogue[id];
+      if (card === undefined)
+        throw new Error(`deck names a card that is not in the catalogue: ${id}`);
+      return { ...tally, [card.weightClass]: (tally[card.weightClass] ?? 0) + 1 };
+    }, {});
+
+    expect(Object.keys(catalogue)).toHaveLength(7);
+    expect(deck).toHaveLength(12);
+    // The Weight curve the twelve-distinct deck had, kept exactly: most turns
+    // offer a cheap option, and the Ultimate is a once-a-fight decision.
     expect(byClass).toEqual({ light: 5, standard: 4, heavy: 2, ultimate: 1 });
+  });
+
+  it('refuses a deck slot naming a card that does not exist', () => {
+    const parsed = parseDeck({ deck: ['lunge', 'trebuchet'] }, m0Catalogue());
+
+    expect(parsed).toEqual({
+      ok: false,
+      errors: ['deck slot 1 names no card: "trebuchet"'],
+    });
   });
 });
