@@ -1,14 +1,19 @@
 import Phaser from 'phaser';
-import { m0Catalogue, m0Deck } from '../data/cards.ts';
-import { CHAIN_SIZE, ENCOUNTERS, PLAYER, PLAYER_MAX_HP, startsChain } from '../data/encounters.ts';
+import { CHAIN_SIZE, ENCOUNTERS, PLAYER, startsChain } from '../data/encounters.ts';
 import type { Action } from '../sim/actions.ts';
+import {
+  absorbEncounter,
+  encounterSetup,
+  restartRun,
+  startRun,
+  type RunState,
+} from '../run/RunState.ts';
 import { isAlive } from '../sim/actor.ts';
 import type { CardDefinition } from '../sim/card.ts';
 import { advanceToDecision, reduce, startCombat } from '../sim/combat.ts';
 import { previewAction } from '../sim/forecast.ts';
 import { cardId, type ActorId, type CardId } from '../sim/ids.ts';
-import { createRng } from '../sim/rng.ts';
-import { DEFAULT_RULES, ULTIMATE_RULES, type CombatRules } from '../sim/rules.ts';
+import { ULTIMATE_RULES, type CombatRules } from '../sim/rules.ts';
 import { tick } from '../sim/tick.ts';
 import { hasPlayableCard } from '../sim/piles.ts';
 import { findActor, type CombatState } from '../sim/state.ts';
@@ -52,14 +57,21 @@ interface CombatViews {
  * S4 replaces the fixed hand with the real draw / Cooldown piles (GDD §4.9).
  */
 export class CombatScene extends Phaser.Scene {
-  private encounterIndex = 0;
-  /** HP the current encounter was entered on — GDD §4.10, carried between fights. */
-  private enteringHp = PLAYER_MAX_HP;
-  private rules: CombatRules = DEFAULT_RULES;
+  /**
+   * Everything that outlives this fight (GDD §5, §7). The scene holds a
+   * reference and never a copy — it reads the run and hands it back, so no game
+   * number lives on a Phaser object (CLAUDE.md §4.1).
+   */
+  private run: RunState = startRun(SESSION_SEED);
   private animations = true;
   private readonly session = new SessionLog();
+  /**
+   * This encounter's log, kept because Saturation is folded from it at the end
+   * (GDD §7.3) rather than tracked alongside the fight (CLAUDE.md §2.2).
+   */
+  private encounterEvents: CombatEvent[] = [];
   private readonly sfx = new Sfx();
-  private opening: Opening = openingState({ index: 0, rules: DEFAULT_RULES, hp: PLAYER_MAX_HP });
+  private opening: Opening = openingState(this.run);
   private state: CombatState = this.opening.state;
   private target: ActorId | null = null;
   private views: CombatViews | null = null;
@@ -224,17 +236,20 @@ export class CombatScene extends Phaser.Scene {
     if (this.state.outcome === 'ongoing') return;
 
     if (this.state.outcome === 'lost') {
-      this.encounterIndex = 0;
-      this.enteringHp = PLAYER_MAX_HP;
+      // Nothing carries between runs (GDD §9) — including the Attunement, so
+      // the next attempt is a different world as well as a fresh one.
+      this.run = restartRun(this.run);
       // The death screen has been read by now; the next attempt counts fresh.
       this.session.reset();
       this.restart();
       return;
     }
 
-    this.encounterIndex = (this.encounterIndex + 1) % ENCOUNTERS.length;
-    const survivingHp = findActor(this.state, PLAYER)?.hp ?? PLAYER_MAX_HP;
-    this.enteringHp = startsChain(this.encounterIndex) ? PLAYER_MAX_HP : survivingHp;
+    this.run = absorbEncounter(this.run, {
+      outcome: this.state.outcome,
+      hp: findActor(this.state, PLAYER)?.hp ?? this.run.hp,
+      events: this.encounterEvents,
+    });
     this.restart();
   }
 
@@ -255,19 +270,21 @@ export class CombatScene extends Phaser.Scene {
       this.cycleUltimateRule();
     });
     keys.on('keydown-G', () => {
-      this.retune({ guardCap: Math.max(5, this.rules.guardCap - 5) });
+      this.retune({ guardCap: Math.max(5, this.run.rules.guardCap - 5) });
     });
     keys.on('keydown-H', () => {
-      this.retune({ guardCap: this.rules.guardCap + 5 });
+      this.retune({ guardCap: this.run.rules.guardCap + 5 });
     });
     keys.on('keydown-J', () => {
-      this.retune({ guardDecayPerTick: Math.max(0, this.rules.guardDecayPerTick - 1) });
+      this.retune({ guardDecayPerTick: Math.max(0, this.run.rules.guardDecayPerTick - 1) });
     });
     keys.on('keydown-K', () => {
-      this.retune({ guardDecayPerTick: this.rules.guardDecayPerTick + 1 });
+      this.retune({ guardDecayPerTick: this.run.rules.guardDecayPerTick + 1 });
     });
     keys.on('keydown-W', () => {
-      this.retune({ waitWeight: tick(this.rules.waitWeight >= 6 ? 2 : this.rules.waitWeight + 1) });
+      this.retune({
+        waitWeight: tick(this.run.rules.waitWeight >= 6 ? 2 : this.run.rules.waitWeight + 1),
+      });
     });
     keys.on('keydown-A', () => {
       this.animations = !this.animations;
@@ -283,19 +300,22 @@ export class CombatScene extends Phaser.Scene {
     keys.on('keydown-N', () => {
       // A debug jump, not a cleared fight: enter the next encounter whole, so
       // it can be read on its own terms.
-      this.encounterIndex = (this.encounterIndex + 1) % ENCOUNTERS.length;
-      this.enteringHp = PLAYER_MAX_HP;
+      this.run = {
+        ...this.run,
+        encounterIndex: (this.run.encounterIndex + 1) % ENCOUNTERS.length,
+        hp: this.run.maxHp,
+      };
       this.restart();
     });
   }
 
   private cycleUltimateRule(): void {
-    const at = ULTIMATE_RULES.indexOf(this.rules.ultimate);
+    const at = ULTIMATE_RULES.indexOf(this.run.rules.ultimate);
     this.retune({ ultimate: ULTIMATE_RULES[(at + 1) % ULTIMATE_RULES.length] ?? 'immediate' });
   }
 
   private retune(change: Partial<CombatRules>): void {
-    this.rules = { ...this.rules, ...change };
+    this.run = { ...this.run, rules: { ...this.run.rules, ...change } };
     this.restart();
   }
 
@@ -303,11 +323,8 @@ export class CombatScene extends Phaser.Scene {
     this.playback.cancel();
     this.actedOnThisPress = false;
     this.dismissArmed = false;
-    this.opening = openingState({
-      index: this.encounterIndex,
-      rules: this.rules,
-      hp: this.enteringHp,
-    });
+    this.opening = openingState(this.run);
+    this.encounterEvents = [...this.opening.events];
     this.state = this.opening.state;
     this.target = firstLivingEnemy(this.state);
     // GDD §4.1 lets a faster enemy act before the player ever sees the board.
@@ -357,6 +374,7 @@ export class CombatScene extends Phaser.Scene {
     // drawn. Playback is a reading of state that is already true (GDD §15).
     this.state = played.settled;
     this.session.record(played.events, PLAYER);
+    this.encounterEvents.push(...played.events);
     if (wasOngoing && this.state.outcome !== 'ongoing') {
       this.session.encounterFinished();
       this.dismissArmed = false;
@@ -515,11 +533,14 @@ export class CombatScene extends Phaser.Scene {
     else views.readout.render('', null);
     views.piles.render(this.state);
     views.banner.render(
-      encounterAt(this.encounterIndex).name,
-      `${encounterAt(this.encounterIndex).teaches}   ·   ${this.chainLabel()}   ·   seed ${String(SESSION_SEED)}`,
+      encounterAt(this.run.encounterIndex).name,
+      `${encounterAt(this.run.encounterIndex).teaches}   ·   ${this.chainLabel()}   ·   seed ${String(SESSION_SEED)}`,
       this.state.outcome === 'won' ? this.endOfEncounterSummary() : '',
     );
-    views.tuning.render(this.rules, { animations: this.animations, sound: !this.sfx.isMuted() });
+    views.tuning.render(this.run.rules, {
+      animations: this.animations,
+      sound: !this.sfx.isMuted(),
+    });
     if (this.state.outcome === 'lost') views.death.show(this.deathReport());
     else views.death.hide();
     this.armAutoWait();
@@ -552,7 +573,7 @@ export class CombatScene extends Phaser.Scene {
    * it coming. The label names the chain and where the next restore is.
    */
   private chainLabel(): string {
-    const position = (this.encounterIndex % CHAIN_SIZE) + 1;
+    const position = (this.run.encounterIndex % CHAIN_SIZE) + 1;
     const remaining = CHAIN_SIZE - position;
     const rest = remaining === 0 ? 'rest after this' : `${String(remaining)} more before rest`;
     return `fight ${String(position)}/${String(CHAIN_SIZE)} on this health · ${rest}`;
@@ -581,8 +602,8 @@ export class CombatScene extends Phaser.Scene {
    */
   private deathReport(): DeathReport {
     const totals = this.session.totals(Object.keys(this.state.catalogue).map(cardId));
-    const encounter = encounterAt(this.encounterIndex);
-    const position = this.encounterIndex + 1;
+    const encounter = encounterAt(this.run.encounterIndex);
+    const position = this.run.encounterIndex + 1;
 
     return {
       cause: this.causeOfDeath(),
@@ -614,9 +635,12 @@ export class CombatScene extends Phaser.Scene {
     if (this.state.outcome === 'lost') return 'the set restarts from the first fight';
 
     const hp = findActor(this.state, PLAYER)?.hp ?? 0;
-    const next = (this.encounterIndex + 1) % ENCOUNTERS.length;
+    const next = (this.run.encounterIndex + 1) % ENCOUNTERS.length;
     return startsChain(next)
-      ? `you rest — the next fight starts at ${String(PLAYER_MAX_HP)} HP`
+      ? // The run's Max HP, not the baseline: a socket lowers the ceiling you
+        // are restored to (GDD §6.1), and a rest that promised 70 would be
+        // lying about the one cost the build layer actually charges.
+        `you rest — the next fight starts at ${String(this.run.maxHp)} HP`
       : `you carry ${String(hp)} HP into the next fight`;
   }
 
@@ -677,31 +701,19 @@ function readSeed(): number {
   return Number.isFinite(parsed) ? parsed : Date.now();
 }
 
-interface OpeningSpec {
-  readonly index: number;
-  readonly rules: CombatRules;
-  /** Health carried in from the previous encounter (GDD §4.10). */
-  readonly hp: number;
-}
-
 /** The state an encounter opens on, and everything that happened getting there. */
 interface Opening {
   readonly state: CombatState;
   readonly events: readonly CombatEvent[];
 }
 
-function openingState({ index, rules, hp }: OpeningSpec): Opening {
-  const catalogue = m0Catalogue();
-  const started = startCombat({
-    actors: encounterAt(index).actors.map((actor) =>
-      actor.side === 'player' ? { ...actor, hp } : actor,
-    ),
-    catalogue,
-    deck: m0Deck(catalogue),
-    // One stream in M0; the map and gem streams arrive with the run layer.
-    rng: createRng(SESSION_SEED + index, 'combat'),
-    rules,
-  });
+/**
+ * The scene asks the run for an encounter and does not assemble one itself.
+ * Which cards, which Weave, which sockets, and what HP to enter on are all
+ * facts about the run (CLAUDE.md §4.1: a Scene is wiring).
+ */
+function openingState(run: RunState): Opening {
+  const started = startCombat(encounterSetup(run));
   const opened = advanceToDecision(started.state);
   return { state: opened.state, events: [...started.events, ...opened.events] };
 }

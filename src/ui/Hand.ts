@@ -4,7 +4,7 @@ import { findCard } from '../sim/card.ts';
 import { playerActor, type CombatState } from '../sim/state.ts';
 import { actorDelay } from '../sim/actor.ts';
 import type { ActorId } from '../sim/ids.ts';
-import { resolvedWeight } from '../sim/resolve.ts';
+import { resolveCard } from '../sim/resolve.ts';
 import { damageAgainst } from '../sim/strike.ts';
 import { CardFace } from './CardFace.ts';
 import { LAYOUT } from './theme.ts';
@@ -63,14 +63,14 @@ export class Hand {
     const player = playerActor(state);
 
     this.faces = cards.map((card, index) => {
+      const resolved = resolveCard(state.weave, card, state.build);
       const face = new CardFace({
         scene: this.options.scene,
         card,
-        delay:
-          player === undefined
-            ? resolvedWeight(state.weave, card)
-            : actorDelay(player, resolvedWeight(state.weave, card)),
+        delay: player === undefined ? resolved.weight : actorDelay(player, resolved.weight),
         damage: damageAgainst(state, card, target),
+        weight: resolved.weight,
+        recovery: resolved.recovery,
         onPlay: this.options.onPlay,
         onHover: this.options.onHover,
       });

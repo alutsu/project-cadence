@@ -6,7 +6,7 @@
  * Counter-based rather than state-chaining so restoring a saved position is O(1)
  * (GDD §16: stream positions are part of the save).
  */
-export type RngStreamName = 'map' | 'gemRoll' | 'enemyGen' | 'combat';
+export type RngStreamName = 'map' | 'gemRoll' | 'enemyGen' | 'combat' | 'weave';
 
 export interface RngState {
   readonly stream: RngStreamName;

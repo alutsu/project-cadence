@@ -27,6 +27,15 @@ export interface CardFaceOptions {
    * player never does that multiplication — so neither does this view.
    */
   readonly damage: number;
+  /**
+   * The card's Weight *as it stands*, from the sim. §7.1's Attunement moves it
+   * by a tick and a gem moves it further, so the printed class value stops
+   * being the answer — and Weight is the one number GDD §15 says the player
+   * must never have to hunt for.
+   */
+  readonly weight: number;
+  /** Likewise Recovery: HASTE and ECHO both move it (GDD §6.2). */
+  readonly recovery: number;
   readonly onPlay: (card: CardDefinition) => void;
   readonly onHover: (card: CardDefinition | null) => void;
 }
@@ -92,7 +101,7 @@ export class CardFace {
       );
     }
 
-    for (const column of statColumns(card, options.damage)) {
+    for (const column of statColumns(options)) {
       this.view.add(
         scene.add
           .text(column.offset, cardHeight / 2 - 84, column.label, {
@@ -152,17 +161,17 @@ export class CardFace {
   }
 }
 
-function statColumns(card: CardDefinition, damage: number): readonly StatColumn[] {
+function statColumns(spec: CardFaceOptions): readonly StatColumn[] {
   // Kept well inside the card edge: the hand is tilted, so neighbouring cards
   // overlap at the corners and anything near an edge gets painted over.
   const spread = Math.round(LAYOUT.hand.cardWidth / 3.6);
   return [
-    { label: 'WGT', value: String(card.weight), offset: -spread, emphasis: true },
+    { label: 'WGT', value: String(spec.weight), offset: -spread, emphasis: true },
     // Neither an AoE's printed damage nor a resisted card's is what an enemy
     // actually takes, so the figure shown is the one the sim will deal to each
     // of them (GDD §4.8, §7.2, P3). The label stays "DMG": a wider one broke
     // the three-column alignment §15 relies on.
-    { label: 'DMG', value: String(damage), offset: 0, emphasis: false },
-    { label: 'REC', value: String(card.recovery), offset: spread, emphasis: false },
+    { label: 'DMG', value: String(spec.damage), offset: 0, emphasis: false },
+    { label: 'REC', value: String(spec.recovery), offset: spread, emphasis: false },
   ];
 }

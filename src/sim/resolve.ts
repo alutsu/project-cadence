@@ -148,18 +148,3 @@ export function resolveCard(
     applies: lingered(card.applies, modifier),
   };
 }
-
-/**
- * What this card costs in Weight right now, riders included.
- *
- * The hand and the queue strip need it, and neither is allowed to add the ±1
- * itself (CLAUDE.md §2.1) — a card that says W4 while the queue moves by 3 is
- * the exact failure GDD §15 calls out.
- */
-export function resolvedWeight(
-  weave: WeaveSnapshot,
-  card: CardDefinition,
-  build: BuildState = EMPTY_BUILD,
-): Tick {
-  return resolveCard(weave, card, build).weight;
-}
