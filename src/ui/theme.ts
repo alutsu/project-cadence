@@ -58,6 +58,16 @@ export const LAYOUT = {
 } as const;
 
 /**
+ * A beat of queue playback is two parts: the strip **moves**, and then it
+ * **stops**. The stop is the point of the whole thing — a queue that slid
+ * continuously from one turn to the next would be watched rather than read, and
+ * §4.2 needs it read. Named separately so tightening the march can never eat
+ * the stillness that follows it.
+ */
+const SLOT_MARCH_MS = 200;
+const BEAT_HOLD_MS = 420;
+
+/**
  * Presentation timing, in **milliseconds** — never Tick (CLAUDE.md §2.3). None
  * of this reaches the sim: every outcome an animation shows is already true in
  * the state before the tween starts, so skipping one changes how fast a result
@@ -75,4 +85,13 @@ export const FX = {
   /** The ring that marks the landing point, as a fraction of the enemy box. */
   ringScale: 1.35,
   ringMs: 320,
+  /** A slot marching one place up the strip. */
+  slotMarchMs: SLOT_MARCH_MS,
+  /** A resolved slot leaving the front, and how far past the edge it goes. */
+  slotExitMs: SLOT_MARCH_MS,
+  slotExitPixels: 70,
+  /** The stillness after the march, before the next turn resolves. */
+  beatHoldMs: BEAT_HOLD_MS,
+  /** One whole beat of queue playback (GDD §4.2): the march, then the stop. */
+  beatMs: SLOT_MARCH_MS + BEAT_HOLD_MS,
 } as const;

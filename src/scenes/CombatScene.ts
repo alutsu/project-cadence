@@ -27,6 +27,8 @@ import { SessionLog } from '../ui/SessionLog.ts';
 import { Sfx } from '../ui/Sfx.ts';
 import { TuningPanel } from '../ui/TuningPanel.ts';
 import { QueueStrip } from '../ui/QueueStrip.ts';
+import { TurnPlayback, type BeatPace } from '../ui/TurnPlayback.ts';
+import { beatsOf, type Beat } from '../ui/turnBeats.ts';
 import { COLORS } from '../ui/theme.ts';
 
 interface CombatViews {
@@ -63,6 +65,20 @@ export class CombatScene extends Phaser.Scene {
   private views: CombatViews | null = null;
   private autoWait: Phaser.Time.TimerEvent | null = null;
   /**
+   * The turns between one decision and the next, played one at a time. Every
+   * beat it holds has already been resolved by the reducer — it decides how
+   * fast the queue drains, never what drains out of it (GDD §15).
+   */
+  private readonly playback = new TurnPlayback({
+    scene: this,
+    onBeat: (beat, pace) => {
+      this.showBeat(beat, pace);
+    },
+    onDone: () => {
+      this.settle();
+    },
+  });
+  /**
    * Whether a click may dismiss a finished encounter. The click that lands the
    * killing blow must not also clear the screen reporting it — pointer-down
    * plays the card, the outcome changes inside that same event, and the global
@@ -70,6 +86,17 @@ export class CombatScene extends Phaser.Scene {
    * on release, so dismissing always takes a second, deliberate click.
    */
   private dismissArmed = false;
+  /**
+   * The same hazard, one beat earlier: Phaser delivers a card's own
+   * `pointerdown` before the scene-level one, so the press that plays a card
+   * arrives at the global handler too — and would skip the playback it just
+   * started, resolving every action instantly (GDD §15).
+   *
+   * Set by the press that acts and consumed by that same press's scene handler,
+   * which always follows it. Release is no help here: a press and release
+   * inside one frame reach Phaser as a single pointer update.
+   */
+  private actedOnThisPress = false;
 
   constructor() {
     super('Combat');
@@ -99,7 +126,7 @@ export class CombatScene extends Phaser.Scene {
       bar: new ActionBar({
         scene: this,
         onWait: () => {
-          this.commit({ kind: 'wait' });
+          this.commitFromPress({ kind: 'wait' });
         },
         onHoverWait: (hovering) => {
           this.previewWait(hovering);
@@ -123,6 +150,16 @@ export class CombatScene extends Phaser.Scene {
     this.input.on(Phaser.Input.Events.POINTER_DOWN, () => {
       // Browsers only hand over an audio context inside a real gesture.
       this.sfx.unlock();
+      const ownPress = this.actedOnThisPress;
+      this.actedOnThisPress = false;
+
+      // GDD §15: a *later* click while the queue is draining skips to the end
+      // of it. Nothing is lost — the board it lands on is the one already
+      // waiting.
+      if (this.playback.isPlaying) {
+        if (!ownPress) this.playback.skip();
+        return;
+      }
       if (!this.dismissArmed) return;
       this.advanceEncounter();
     });
@@ -141,6 +178,7 @@ export class CombatScene extends Phaser.Scene {
    * change; the hand must not be rebuilt under the pointer hovering it.
    */
   private previewCard(card: CardDefinition | null): void {
+    if (this.playback.isPlaying) return;
     const target = this.currentTarget();
     if (card === null || target === null) {
       this.clearPreview();
@@ -150,6 +188,7 @@ export class CombatScene extends Phaser.Scene {
   }
 
   private previewWait(hovering: boolean): void {
+    if (this.playback.isPlaying) return;
     if (hovering) {
       this.showPreview({ kind: 'wait' }, 'WAIT');
       return;
@@ -162,7 +201,7 @@ export class CombatScene extends Phaser.Scene {
     if (views === null) return;
 
     const preview = previewAction(this.state, action);
-    views.queue.render(this.state, preview);
+    views.queue.render({ state: this.state, preview, motion: 'snap' });
     views.enemies.render(this.state, this.target, preview);
     views.readout.render(label, preview);
   }
@@ -171,7 +210,7 @@ export class CombatScene extends Phaser.Scene {
     const views = this.views;
     if (views === null) return;
 
-    views.queue.render(this.state);
+    views.queue.render({ state: this.state, preview: null, motion: 'snap' });
     views.enemies.render(this.state, this.target, null);
     views.readout.render('', null);
   }
@@ -261,6 +300,8 @@ export class CombatScene extends Phaser.Scene {
   }
 
   private restart(): void {
+    this.playback.cancel();
+    this.actedOnThisPress = false;
     this.dismissArmed = false;
     this.opening = openingState({
       index: this.encounterIndex,
@@ -276,6 +317,7 @@ export class CombatScene extends Phaser.Scene {
   }
 
   private selectTarget(actor: ActorId): void {
+    if (this.playback.isPlaying) return;
     this.target = actor;
     this.renderAll();
   }
@@ -283,7 +325,16 @@ export class CombatScene extends Phaser.Scene {
   private playCard(card: CardDefinition): void {
     const target = this.currentTarget();
     if (target === null) return;
-    this.commit({ kind: 'play', card: card.id, target });
+    this.commitFromPress({ kind: 'play', card: card.id, target });
+  }
+
+  /**
+   * An action taken by a press — a card, or the Wait button. Marks the press so
+   * the scene handler that follows it knows the playback is its own doing.
+   */
+  private commitFromPress(action: Action): void {
+    this.actedOnThisPress = true;
+    this.commit(action);
   }
 
   /**
@@ -291,82 +342,124 @@ export class CombatScene extends Phaser.Scene {
    * declines to re-render when its request is rejected (CLAUDE.md §5.4).
    */
   private commit(action: Action): void {
+    // The board on screen is behind the sim until the queue has finished
+    // draining, so there is no honest state to act from yet.
+    if (this.playback.isPlaying) return;
+
     const result = reduce(this.state, action);
     if (!result.ok) return;
 
     this.views?.readout.setIdleNote(null);
-    const before = this.state;
-    const advanced = advanceToDecision(result.step.state);
-    const events = [...result.step.events, ...advanced.events];
+    const played = beatsOf(this.state, result.step);
     const wasOngoing = this.state.outcome === 'ongoing';
 
-    this.state = advanced.state;
-    this.target = this.currentTarget();
-    this.session.record(events, PLAYER);
+    // The whole outcome is committed here, before a single frame of it is
+    // drawn. Playback is a reading of state that is already true (GDD §15).
+    this.state = played.settled;
+    this.session.record(played.events, PLAYER);
     if (wasOngoing && this.state.outcome !== 'ongoing') {
       this.session.encounterFinished();
       this.dismissArmed = false;
     }
-    this.renderAll();
 
-    this.playFx(before, events);
+    // The animation toggle does not cancel the beats, it stops waiting on them
+    // — the same board, read all at once instead of one turn at a time.
+    if (this.animations) this.playback.play(played.beats);
+    else this.playback.flush(played.beats);
   }
 
   /**
-   * Sound and motion for what has already happened. Every value here is read
-   * out of the event log after the reducer ran, so nothing this method does can
-   * change an outcome — which is what makes skipping it safe (GDD §15).
-   *
-   * Seats come from the state *before* the action: a killed enemy has already
-   * left the line by now, and its blow should still land where it stood.
+   * One turn of the drain, drawn. Every view reads the state as it stood at the
+   * end of *this* beat, so the strip, the line and the clock agree on which
+   * turn the player is watching.
    */
-  private playFx(before: CombatState, events: readonly CombatEvent[]): void {
+  private showBeat(beat: Beat, pace: BeatPace): void {
     const views = this.views;
     if (views === null) return;
 
+    const over = beat.after.outcome !== 'ongoing';
+    views.queue.render({
+      state: beat.after,
+      preview: null,
+      motion: pace === 'paced' ? 'march' : 'snap',
+    });
+    views.enemies.render(beat.after, this.targetIn(beat.after), null);
+    views.bar.render(beat.after);
+    views.piles.render(beat.after);
+    if (over) views.hand.hide();
+    else views.hand.render(beat.after);
+
+    this.soundOf(beat);
+    if (pace === 'paced') this.sightOf(beat);
+  }
+
+  /** The queue has drained; the board catches up with the sim and goes live. */
+  private settle(): void {
+    this.target = this.currentTarget();
+    this.renderAll();
+  }
+
+  /**
+   * What a beat sounds like. Sound is never skipped: a skip is a request for
+   * less waiting, not for silence, and the report of a blow is how a flushed
+   * beat is noticed at all.
+   */
+  private soundOf(beat: Beat): void {
+    for (const event of beat.events) {
+      if (event.kind === 'card_played' && event.actor === PLAYER) {
+        this.playedCardSound(beat.before, event.card);
+      }
+      if (event.kind === 'waited') this.sfx.guard();
+      if (event.kind === 'damage_dealt') this.sfx.impact(event.amount);
+      if (event.kind === 'staggered') this.sfx.stagger();
+      if (event.kind === 'actor_died') this.sfx.death();
+    }
+  }
+
+  /** A card's report is its Weight class — the heavier it is, the deeper. */
+  private playedCardSound(before: CombatState, card: CardId): void {
+    const played = findCard(before.catalogue, card);
+    if (played === undefined) return;
+    this.sfx.strike(played.weightClass);
+  }
+
+  /**
+   * What a beat looks like. Every value here is read out of the event log after
+   * the reducer ran, so nothing this method does can change an outcome — which
+   * is what makes dropping it on a skip safe (GDD §15).
+   *
+   * Seats come from the state the beat started in: an enemy killed by this beat
+   * has already left the line, and its blow should still land where it stood.
+   */
+  private sightOf(beat: Beat): void {
     const died = new Set(
-      events.filter((event) => event.kind === 'actor_died').map((event) => event.actor),
+      beat.events.filter((event) => event.kind === 'actor_died').map((event) => event.actor),
     );
 
-    for (const event of events) {
+    for (const event of beat.events) {
       if (event.kind === 'card_played' && event.actor === PLAYER) {
-        this.playedCardFx(before, event.card);
-        continue;
-      }
-      if (event.kind === 'waited') {
-        this.sfx.guard();
+        this.playedCardFx(beat.before, event.card);
         continue;
       }
       if (event.kind === 'damage_dealt') {
-        this.sfx.impact(event.amount);
-        this.landedBlowFx(before, {
+        this.landedBlowFx(beat.before, {
           target: event.target,
           amount: event.amount,
           lethal: died.has(event.target),
         });
         continue;
       }
-      if (event.kind === 'staggered') {
-        this.staggerFx(event.actor, event.delay);
-        continue;
-      }
-      if (event.kind === 'actor_died') this.sfx.death();
+      if (event.kind === 'staggered') this.views?.queue.flashStagger(event.actor, event.delay);
     }
-  }
-
-  private staggerFx(actor: ActorId, delay: number): void {
-    this.sfx.stagger();
-    if (this.animations) this.views?.queue.flashStagger(actor, delay);
   }
 
   private playedCardFx(before: CombatState, card: CardId): void {
     const definition = findCard(before.catalogue, card);
     if (definition === undefined) return;
-    this.sfx.strike(definition.weightClass);
 
     const index = before.hand.indexOf(card);
-    const target = this.target;
-    if (!this.animations || index === -1 || target === null) return;
+    const target = this.targetIn(before);
+    if (index === -1 || target === null) return;
 
     const to = enemySeat(before, target);
     if (to === null) return;
@@ -378,8 +471,6 @@ export class CombatScene extends Phaser.Scene {
   }
 
   private landedBlowFx(before: CombatState, blow: LandedBlow): void {
-    if (!this.animations) return;
-
     const at = enemySeat(before, blow.target);
     // The player has no silhouette to hang a figure on (GDD §15.1), so an
     // incoming blow is heard rather than drawn.
@@ -391,12 +482,21 @@ export class CombatScene extends Phaser.Scene {
 
   /** GDD §4.8: the target persists, and killing it advances to the next enemy. */
   private currentTarget(): ActorId | null {
+    return this.targetIn(this.state);
+  }
+
+  /**
+   * Who the player is aiming at in a given state. Asked per beat as well as per
+   * decision, so the line highlights the enemy that was actually being struck
+   * at that point in the drain rather than the one that inherited the target.
+   */
+  private targetIn(state: CombatState): ActorId | null {
     const held = this.target;
     if (held !== null) {
-      const actor = findActor(this.state, held);
+      const actor = findActor(state, held);
       if (actor !== undefined && isAlive(actor)) return held;
     }
-    return firstLivingEnemy(this.state);
+    return firstLivingEnemy(state);
   }
 
   private renderAll(): void {
@@ -404,7 +504,7 @@ export class CombatScene extends Phaser.Scene {
     if (views === null) return;
 
     const over = this.state.outcome !== 'ongoing';
-    views.queue.render(this.state);
+    views.queue.render({ state: this.state, preview: null, motion: 'snap' });
     views.enemies.render(this.state, this.target, null);
     // The cards are inert once the fight is over, and the summary needs the
     // room they occupy.
@@ -435,6 +535,7 @@ export class CombatScene extends Phaser.Scene {
     this.autoWait = null;
 
     const idle =
+      !this.playback.isPlaying &&
       this.state.outcome === 'ongoing' &&
       this.state.activeActorId !== null &&
       !hasPlayableCard(this.state.hand, this.state.catalogue);
@@ -523,6 +624,7 @@ export class CombatScene extends Phaser.Scene {
     const views = this.views;
     if (views === null) return;
 
+    this.playback.destroy();
     views.fx.destroy();
     views.death.destroy();
     views.queue.destroy();

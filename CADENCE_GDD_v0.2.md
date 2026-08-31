@@ -512,6 +512,20 @@ badge. No environment art, no particle systems beyond a hit flash, no camera mov
 except a Stagger nudge (§4.6) — that one moment is the game's payoff and earns its
 animation. Everything here is skippable per the animation rule below.
 
+**[AMD] The queue drains one turn at a time.** Committing an action used to move the
+strip in a single jump: the player's card, every enemy turn it ceded, and the next
+decision all landed in one frame, and the turns in between could only be reconstructed
+from the HP that had gone missing. The queue is the game (§4.2), so it now **plays the
+same resolution back as a sequence of beats** — one turn per beat, the resolved slot
+marching off the front, the rest stepping up, until the player is due again. This is a
+second animation that earns its place beside the Stagger nudge, and for the same reason:
+it is the moment the strip is actually saying something.
+
+It changes nothing about what happens. Every beat is read from a resolution the reducer
+has already completed, so the board it ends on is the board the single jump produced —
+byte-identical. Per the animation rule below it is fully skippable: the toggle plays the
+whole resolution at once, and a click during a drain jumps to its end.
+
 **[AMD] Consequence — the player has no portrait.** §15's queue strip lists "portraits",
 which assumes every actor has a face to show. The player never sees their own, so the
 player's slots in the strip are marked with a **distinct non-portrait token** (the held-card
@@ -526,7 +540,7 @@ strip: the player's own position is the one thing they are always looking for.
 - **Weave panel** — collapsible, always accessible, one row per tag: glyph, name, final multiplier, floor indicator.
 - **Card face** — Weight and Recovery are as prominent as damage. If the player has to hunt for Weight, the pillar fails.
 - **Damage preview** — hovering a card shows post-Weave damage against the current target, not base damage. The player should never do multiplication in their head.
-- **Speed / animation** — full skip toggle. A 35-minute run cannot afford unskippable animation.
+- **Speed / animation** — full skip toggle. A 35-minute run cannot afford unskippable animation. **[AMD]** A click during the queue drain (§15.1) skips that drain, so the toggle is the setting and the click is the impulse.
 - **Text size** setting, minimum 16px equivalent.
 - **[NEW] Undo-free design** — no undo, but confirm dialogs on all irreversible acts (socketing, gem removal, card removal).
 

@@ -415,19 +415,31 @@ function resolveEnemyTurn(state: CombatState, enemy: Actor): CombatStep {
 }
 
 /**
- * Advances time, resolving enemy turns, until the player is due to act or the
- * encounter is over. Enemy turns are time resolving, not actions — only the
+ * One turn's worth of time. `turn` means an enemy acted and time can advance
+ * again; `settled` means it has stopped — the player is due, or the encounter
+ * is over.
+ *
+ * Exists so a caller can watch the queue drain one slot at a time instead of
+ * only seeing where it landed. The UI plays each step as a beat (GDD §15).
+ */
+export type Advance =
+  | { readonly kind: 'turn'; readonly actor: ActorId; readonly step: CombatStep }
+  | { readonly kind: 'settled'; readonly step: CombatStep };
+
+/**
+ * Advances time up to and including the next enemy turn, or up to the point
+ * where time stops. Enemy turns are time resolving, not actions — only the
  * player's choices go through `reduce`.
  */
-export function advanceToDecision(state: CombatState): CombatStep {
+export function advanceOneTurn(state: CombatState): Advance {
   const events: CombatEvent[] = [];
   let current = state;
 
   for (;;) {
-    if (current.outcome !== 'ongoing') return { state: current, events };
+    if (current.outcome !== 'ongoing') return settled(current, events);
 
     const next = nextToAct(current.actors);
-    if (next === null) return { state: current, events };
+    if (next === null) return settled(current, events);
 
     // Tick-scheduled effects resolve between turns (GDD §3): Cooldown returns,
     // damage over time, expiries, and Guard decaying one per tick along the way.
@@ -436,21 +448,45 @@ export function advanceToDecision(state: CombatState): CombatStep {
     events.push(...elapsed.events);
 
     // Damage over time can settle the encounter before anyone acts again.
-    const settled = settleOutcome(current, []);
-    current = settled.state;
-    events.push(...settled.events);
-    if (current.outcome !== 'ongoing') return { state: current, events };
+    const closed = settleOutcome(current, []);
+    current = closed.state;
+    events.push(...closed.events);
+    if (current.outcome !== 'ongoing') return settled(current, events);
 
+    // A corpse still holds a slot until time reaches it; nothing to show for it.
     if (!isAlive(next)) continue;
 
     if (next.side === 'player') {
       const opened = openPlayerTurn(current, next);
-      return { state: opened.state, events: [...events, ...opened.events] };
+      return settled(opened.state, [...events, ...opened.events]);
     }
 
     const step = resolveEnemyTurn(current, next);
-    current = step.state;
-    events.push(...step.events);
+    return {
+      kind: 'turn',
+      actor: next.id,
+      step: { state: step.state, events: [...events, ...step.events] },
+    };
+  }
+}
+
+function settled(state: CombatState, events: readonly CombatEvent[]): Advance {
+  return { kind: 'settled', step: { state, events } };
+}
+
+/**
+ * Advances time, resolving enemy turns, until the player is due to act or the
+ * encounter is over.
+ */
+export function advanceToDecision(state: CombatState): CombatStep {
+  const events: CombatEvent[] = [];
+  let current = state;
+
+  for (;;) {
+    const advance = advanceOneTurn(current);
+    current = advance.step.state;
+    events.push(...advance.step.events);
+    if (advance.kind === 'settled') return { state: current, events };
   }
 }
 

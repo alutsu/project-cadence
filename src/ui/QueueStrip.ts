@@ -9,6 +9,7 @@ import {
   DANGER_INK,
   ENEMY_INK,
   FONT,
+  FX,
   GUARD_INK,
   INK,
   LAYOUT,
@@ -16,6 +17,33 @@ import {
   PLAYER_INK,
   TYPE,
 } from './theme.ts';
+
+/**
+ * How the strip gets from the queue it is showing to the queue it is asked for.
+ *
+ * `march` slides each surviving slot from where it stood, marches the resolved
+ * one off the front, and fades in whatever the forecast has newly reached —
+ * time passing, one turn at a time. `snap` redraws in place: the ghost preview
+ * is a *question* about the queue, not a change to it, and animating a hover
+ * would read as the clock moving (GDD §4.2).
+ */
+export type SlotMotion = 'march' | 'snap';
+
+export interface QueueView {
+  readonly state: CombatState;
+  /** The hovered action's projected queue, or null for the live one. */
+  readonly preview: ActionPreview | null;
+  readonly motion: SlotMotion;
+}
+
+/** A drawn slot, kept so the next render can march it rather than replace it. */
+interface SlotView {
+  /** Identity across renders: the same actor acting at the same tick. */
+  readonly key: string;
+  readonly actor: ActorId;
+  readonly x: number;
+  readonly view: Phaser.GameObjects.Container;
+}
 
 interface SlotOptions {
   readonly state: CombatState;
@@ -43,7 +71,9 @@ interface GhostContext {
  */
 export class QueueStrip {
   private readonly container: Phaser.GameObjects.Container;
-  private slots: { actor: ActorId; view: Phaser.GameObjects.Container }[] = [];
+  private slots: SlotView[] = [];
+  /** Resolved slots still marching off the front, owned until their tween ends. */
+  private retiring: Phaser.GameObjects.Container[] = [];
 
   constructor(private readonly scene: Phaser.Scene) {
     this.container = scene.add.container(0, 0);
@@ -86,8 +116,9 @@ export class QueueStrip {
     });
   }
 
-  render(state: CombatState, preview: ActionPreview | null = null): void {
-    this.container.removeAll(true);
+  render(view: QueueView): void {
+    const { state, preview } = view;
+    const previous = this.slots;
     this.slots = [];
 
     const live = forecastQueue(state);
@@ -106,14 +137,90 @@ export class QueueStrip {
           };
 
     slots.forEach((slot, index) => {
-      const view = this.slotView({ state, slot, index, ghost, verdict: verdictFor(slot, hit) });
-      this.slots.push({ actor: slot.actor, view });
-      this.container.add(view);
+      const drawn = this.slotView({ state, slot, index, ghost, verdict: verdictFor(slot, hit) });
+      this.slots.push({ key: keyOf(slot), actor: slot.actor, x: drawn.x, view: drawn });
+      this.container.add(drawn);
     });
+
+    if (view.motion === 'march') this.march(previous);
+    this.retire(previous, view.motion);
   }
 
   destroy(): void {
+    for (const slot of this.slots) this.scene.tweens.killTweensOf(slot.view);
+    for (const view of this.retiring) this.scene.tweens.killTweensOf(view);
+    this.slots = [];
+    this.retiring = [];
     this.container.destroy(true);
+  }
+
+  /**
+   * Puts each slot back where its turn stood a moment ago and walks it to where
+   * it stands now. A slot the forecast has only just reached fades in at the
+   * tail instead — it did not come from anywhere.
+   */
+  private march(previous: readonly SlotView[]): void {
+    for (const slot of this.slots) {
+      const was = previous.find((candidate) => candidate.key === slot.key);
+      if (was === undefined) {
+        this.fadeIn(slot.view);
+        continue;
+      }
+      if (was.x === slot.x) continue;
+
+      slot.view.setX(was.x);
+      this.scene.tweens.add({
+        targets: slot.view,
+        x: slot.x,
+        duration: FX.slotMarchMs,
+        ease: 'Cubic.easeOut',
+      });
+    }
+  }
+
+  private fadeIn(view: Phaser.GameObjects.Container): void {
+    const settled = view.alpha;
+    view.setAlpha(0);
+    this.scene.tweens.add({
+      targets: view,
+      alpha: settled,
+      duration: FX.slotMarchMs,
+      ease: 'Quad.easeOut',
+    });
+  }
+
+  /**
+   * Clears the slots the last render drew. A turn that is simply redrawn goes
+   * at once — its replacement is already standing on top of it. A turn that has
+   * *resolved* marches off the front, which is the beat the playback exists to
+   * show (GDD §4.2).
+   */
+  private retire(previous: readonly SlotView[], motion: SlotMotion): void {
+    const kept = new Set(this.slots.map((slot) => slot.key));
+
+    for (const slot of previous) {
+      this.scene.tweens.killTweensOf(slot.view);
+      if (motion === 'snap' || kept.has(slot.key)) {
+        slot.view.destroy(true);
+        continue;
+      }
+      this.exit(slot.view);
+    }
+  }
+
+  private exit(view: Phaser.GameObjects.Container): void {
+    this.retiring.push(view);
+    this.scene.tweens.add({
+      targets: view,
+      x: view.x - FX.slotExitPixels,
+      alpha: 0,
+      duration: FX.slotExitMs,
+      ease: 'Quad.easeIn',
+      onComplete: () => {
+        this.retiring = this.retiring.filter((candidate) => candidate !== view);
+        view.destroy(true);
+      },
+    });
   }
 
   private slotView(options: SlotOptions): Phaser.GameObjects.Container {
@@ -210,6 +317,15 @@ const CENTERED = { x: 0.5, y: 0.5 } as const;
 const GHOST_ALPHA = 0.9;
 const STAGGER_KICK = 26;
 const STAGGER_INK = DANGER_INK;
+
+/**
+ * What makes two drawn slots the same turn across renders: one actor acting
+ * once, at one tick. A staggered actor's slot therefore counts as a new one —
+ * which is right, because the tick it was pushed to is the news (GDD §4.6).
+ */
+function keyOf(slot: QueueSlot): string {
+  return `${slot.kind}:${slot.actor}:${String(slot.at)}`;
+}
 
 function strokeFor(isPlayer: boolean, landsFirst: boolean): number {
   if (isPlayer) return COLORS.player;
