@@ -2,7 +2,9 @@ import Phaser from 'phaser';
 import { PLAYER } from '../data/encounters.ts';
 import type { Action } from '../sim/actions.ts';
 import { performForgeAction, restartRun, startRun, type RunState } from '../run/RunState.ts';
-import { advanceRun, viewOf, type RunIntent, type RunView } from '../run/runFlow.ts';
+import { advanceRun, levelOf, viewOf, type RunIntent, type RunView } from '../run/runFlow.ts';
+import { encounterRecord, nodeRecord, runSummary } from '../run/telemetry.ts';
+import { playtestLog, type PlaytestLog } from '../platform/playtest.ts';
 import { DEPTH_COUNT } from '../run/map.ts';
 import { FRAMES, type Frame } from '../sim/gem.ts';
 import { ForgeScreen, type ForgeAction } from '../ui/ForgeScreen.ts';
@@ -74,12 +76,18 @@ export class CombatScene extends Phaser.Scene {
    * (GDD §7.3) rather than tracked alongside the fight (CLAUDE.md §2.2).
    */
   private encounterEvents: CombatEvent[] = [];
+  /** GDD §19's playtest telemetry. Dev-only; a built bundle records nothing. */
+  private readonly playtest: PlaytestLog = playtestLog(SESSION_NAME);
+  /** Every card played this run, for §19's "cards never played". */
+  private readonly played = new Set<CardId>();
   /** What the forge's next act applies to. Presentation state, not game state. */
   private forgeCard: CardId | null = null;
   private frameIndex = 0;
   private readonly sfx = new Sfx();
   private opening: Opening = openingState(this.run);
   private state: CombatState = this.opening.state;
+  /** The board the current fight opened on, for its duration and HP delta. */
+  private openedOn: CombatState = this.state;
   private target: ActorId | null = null;
   private views: CombatViews | null = null;
   private autoWait: Phaser.Time.TimerEvent | null = null;
@@ -124,6 +132,7 @@ export class CombatScene extends Phaser.Scene {
   create(): void {
     this.cameras.main.setBackgroundColor(COLORS.background);
     this.target = firstLivingEnemy(this.state);
+    this.openPlaytest();
 
     this.views = {
       queue: new QueueStrip(this),
@@ -253,6 +262,14 @@ export class CombatScene extends Phaser.Scene {
     if (this.state.outcome === 'ongoing') return;
 
     if (this.state.outcome === 'lost') {
+      this.recordEncounter();
+      this.playtest.record({
+        kind: 'run_ended',
+        summary: runSummary(this.run, false, this.played),
+      });
+      this.playtest.flush();
+      this.played.clear();
+
       // Nothing carries between runs (GDD §9) — including the Attunement, so
       // the next attempt is a different world as well as a fresh one.
       this.run = restartRun(this.run);
@@ -262,6 +279,7 @@ export class CombatScene extends Phaser.Scene {
       return;
     }
 
+    this.recordEncounter();
     const finished = advanceRun(this.run, {
       kind: 'finishEncounter',
       result: {
@@ -400,12 +418,60 @@ export class CombatScene extends Phaser.Scene {
     this.restart();
   }
 
+  /**
+   * Opens the session log (GDD §19). The first node is recorded here rather
+   * than in `restart`, because the opening encounter is the one the scene is
+   * constructed into — it never goes through a restart.
+   */
+  private openPlaytest(): void {
+    this.playtest.record({
+      kind: 'run_started',
+      seed: SESSION_SEED,
+      attunement: { ...this.run.attunement },
+    });
+    this.recordNode();
+  }
+
+  private recordNode(): void {
+    const view = viewOf(this.run);
+    if (view.kind !== 'encounter') return;
+
+    this.playtest.record({
+      kind: 'node_entered',
+      node: nodeRecord(this.run, view.node, levelOf(this.run, view.node)),
+    });
+  }
+
+  /**
+   * One fight, recorded off its own log (GDD §19). Called before the run
+   * advances, so the node and HP it names are the ones that were fought.
+   */
+  private recordEncounter(): void {
+    const view = viewOf(this.run);
+    if (view.kind !== 'encounter') return;
+
+    this.playtest.record({
+      kind: 'encounter_ended',
+      encounter: encounterRecord({
+        run: this.run,
+        node: view.node,
+        before: this.openedOn,
+        after: this.state,
+        events: this.encounterEvents,
+        player: PLAYER,
+      }),
+    });
+  }
+
   private restart(): void {
     this.playback.cancel();
     this.actedOnThisPress = false;
     this.dismissArmed = false;
     this.opening = openingState(this.run);
     this.encounterEvents = [...this.opening.events];
+    this.openedOn = this.opening.state;
+
+    this.recordNode();
     this.state = this.opening.state;
     this.target = firstLivingEnemy(this.state);
     // GDD §4.1 lets a faster enemy act before the player ever sees the board.
@@ -456,6 +522,7 @@ export class CombatScene extends Phaser.Scene {
     this.state = played.settled;
     this.session.record(played.events, PLAYER);
     this.encounterEvents.push(...played.events);
+    if (action.kind === 'play') this.played.add(action.card);
     if (wasOngoing && this.state.outcome !== 'ongoing') {
       this.session.encounterFinished();
       this.dismissArmed = false;
@@ -785,6 +852,13 @@ function outcomeWord(outcome: CombatState['outcome']): string {
  * tester can report the hand they were looking at.
  */
 const SESSION_SEED = readSeed();
+
+/**
+ * Names this playtest's log file (GDD §19). The seed is in it so a session can
+ * be matched to the run it recorded, and a timestamp so two sittings on the
+ * same seed do not overwrite one another.
+ */
+const SESSION_NAME = `seed${String(SESSION_SEED)}-${String(Date.now())}`;
 
 function readSeed(): number {
   const requested = new URLSearchParams(window.location.search).get('seed');

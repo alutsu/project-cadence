@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "description": "Cadence — a tick-scheduled deckbuilding roguelite (Phaser 4 + TypeScript)",
+  "description": "Cadence \u2014 a tick-scheduled deckbuilding roguelite (Phaser 4 + TypeScript)",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
@@ -14,7 +14,8 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "sim": "node src/sim-harness/main.ts"
+    "sim": "node src/sim-harness/main.ts",
+    "playtest": "node src/sim-harness/main.ts --playtest"
   },
   "dependencies": {
     "phaser": "^4.2.1"

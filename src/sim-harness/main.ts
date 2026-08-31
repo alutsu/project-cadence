@@ -7,6 +7,7 @@ import { scenario } from './scenario.ts';
 import { balanceReport } from './balance.ts';
 import { gauntlet, sweep } from './sweep.ts';
 import { buildReport } from './builds.ts';
+import { reportLatest } from './playtestReport.ts';
 
 /**
  * Headless driver (GDD §19, CLAUDE.md §7.3). S1 runs one scripted encounter and
@@ -43,9 +44,15 @@ function main(): void {
       sweep: { type: 'boolean' },
       report: { type: 'boolean' },
       builds: { type: 'boolean' },
+      playtest: { type: 'boolean' },
       seeds: { type: 'string' },
     },
   });
+
+  if (values.playtest === true) {
+    console.log(reportLatest());
+    return;
+  }
 
   if (values.builds === true) {
     const seeds = values.seeds === undefined ? DEFAULT_SEEDS : Number(values.seeds);
