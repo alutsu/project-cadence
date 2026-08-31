@@ -49,16 +49,39 @@ describe('a line is built to the level’s budget (GDD §12.1, §12.2 [AMD])', (
     }
   });
 
-  it('opens gently: a level-0 fight is one cheap thing', () => {
-    // The direct fix for what the measurement found. A first node must be
-    // winnable by a five-card deck (GDD §5.1's level 1).
+  it('opens on rats alone, and only rats — §12.2 says what they are for', () => {
+    // A playtest died six times running to a Chime Adept at level 2: its Slow
+    // costs a third of your tempo and a six-card deck has no slack to pay it.
+    // The opening levels belong to the archetype §12.2 calls "where a player
+    // learns Stagger exists", and a budget alone could not express that.
+    for (let seed = 0; seed < 100; seed += 1) {
+      const line = generateEncounter(
+        { level: seed % 2, elite: false, omen: null },
+        createRng(seed, 'enemyGen'),
+      );
+      expect(line.every((seat) => seat.name.startsWith('Poison Rat'))).toBe(true);
+    }
+  });
+
+  it('opens on a fight rather than a formality', () => {
+    // The other half of the same playtest: the opening node was three fights of
+    // eight ticks and three damage apiece. Winnable is the floor, not the aim.
     const line = generateEncounter(
       { level: 0, elite: false, omen: null },
       createRng(3, 'enemyGen'),
     );
 
-    expect(line).toHaveLength(1);
-    expect(line[0]?.maxHp ?? 0).toBeLessThan(40);
+    expect(line.length).toBeGreaterThan(1);
+  });
+
+  it('holds a Chime Adept back until the deck can pay its Slow', () => {
+    const adeptAt = (level: number): boolean =>
+      Array.from({ length: 60 }, (_, seed) =>
+        generateEncounter({ level, elite: false, omen: null }, createRng(seed, 'enemyGen')),
+      ).some((line) => line.some((seat) => seat.name.startsWith('Chime Adept')));
+
+    expect(adeptAt(1)).toBe(false);
+    expect(adeptAt(6)).toBe(true);
   });
 
   it('grows with the level, in both count and size', () => {

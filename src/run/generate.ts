@@ -35,8 +35,22 @@ export const MAX_ENEMIES = 4;
  * than an impossible one.
  */
 export function budgetFor(level: number): number {
-  return 1 + Math.max(0, level);
+  return OPENING_BUDGET + Math.floor(Math.max(0, level) / LEVELS_PER_POINT);
 }
+
+/**
+ * Two, so the first fight of a run is a pair of rats rather than a single one.
+ * A playtest's opening node was three fights of eight ticks and three damage
+ * apiece — not a difficulty problem, but not a fight either.
+ */
+const OPENING_BUDGET = 2;
+
+/**
+ * How fast the budget grows. Linear in the level tripled a fight's size between
+ * two adjacent nodes — 34 HP of enemies to 118 — which is the cliff a playtest
+ * died on six times running. Growth has to be slower than the deck's.
+ */
+const LEVELS_PER_POINT = 3;
 
 export interface EncounterOrder {
   readonly level: number;
@@ -49,11 +63,12 @@ export interface EncounterOrder {
  * The archetype an Omen promised, if any. §11 shows one tag before the player
  * commits, and a generated line that ignored it would make the map a liar.
  */
-function omenBearer(omen: Omen | null): EnemyArchetype | null {
+function omenBearer(omen: Omen | null, level: number): EnemyArchetype | null {
   if (omen === null) return null;
 
   return (
     ARCHETYPES.find((archetype) => {
+      if (archetype.minLevel > level) return false;
       const resistance = archetype.resistances[omen.tag];
       return resistance.kind === 'resist' && resistance.value > 0;
     }) ?? null
@@ -77,7 +92,7 @@ export function generateEncounter(order: EncounterOrder, rng: Rng): readonly Act
   let remaining = budgetFor(level) + (order.elite ? 2 : 0);
 
   const chosen: EnemyArchetype[] = [];
-  const promised = omenBearer(order.omen);
+  const promised = omenBearer(order.omen, level);
   if (promised !== null && promised.cost <= remaining) {
     chosen.push(promised);
     remaining -= promised.cost;
@@ -88,8 +103,13 @@ export function generateEncounter(order: EncounterOrder, rng: Rng): readonly Act
   // filtering the pool first, or re-rolling until something fit, would both
   // make the number of draws depend on the budget, and a stream position that
   // depends on its own outcome cannot be resumed from a save.
+  // Filtered by level, which is fixed for the whole encounter, so the draw
+  // count still cannot depend on the outcome (§20.2 [AMD]). Filtering by the
+  // *remaining budget* would not be safe here for exactly that reason.
+  const pool = ARCHETYPES.filter((archetype) => archetype.minLevel <= level);
+
   for (let slot = chosen.length; slot < MAX_ENEMIES; slot += 1) {
-    const drawn = pick(rng, ARCHETYPES);
+    const drawn = pick(rng, pool);
     if (drawn === null || drawn.cost > remaining) continue;
 
     chosen.push(drawn);

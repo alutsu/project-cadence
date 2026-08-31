@@ -27,6 +27,17 @@ export interface EnemyArchetype {
    */
   readonly cost: number;
   /**
+   * The lowest enemy level this archetype may appear at (§12.1).
+   *
+   * Cost governs *how many* things a fight holds; this governs *which*. They
+   * are different questions and a budget alone cannot answer the second: a
+   * playtest died six times to a Chime Adept at level 2, because its Slow costs
+   * a third of your tempo and a six-card deck has no slack to pay that. §12.2
+   * already says what the Poison Rat is for — "where a player learns Stagger
+   * exists" — so the opening levels are its alone.
+   */
+  readonly minLevel: number;
+  /**
    * GDD §7.2, and hand-authored rather than generated: §12.1's generator is
    * M2's. Speed never scales with level and neither does this — a resistance
    * that grew would make the Weave a tax on depth rather than a question about
@@ -49,6 +60,7 @@ export const POISON_RAT: EnemyArchetype = {
   baseHp: 34,
   basePoise: 7,
   cost: 1,
+  minLevel: 0,
   // Vermin that lives where the light does not. Light, because this is the
   // enemy a player meets first and the Weave should not be the lesson.
   resistances: resistTo({ Shadow: 0.3 }),
@@ -72,6 +84,7 @@ export const WARDEN: EnemyArchetype = {
   baseHp: 72,
   basePoise: 20,
   cost: 4,
+  minLevel: 5,
   // Armour. This is the archetype the resistance rule exists for: the Warden is
   // already the fight you solve rather than out-damage (§12.2), and shrugging
   // off the deck's most repeated tag pushes the answer off Lunge and Crush.
@@ -90,6 +103,7 @@ export const CHIME_ADEPT: EnemyArchetype = {
   baseHp: 48,
   basePoise: 12,
   cost: 2,
+  minLevel: 3,
   // A thing made of resonance is not moved by a wide arc or a clever one.
   resistances: resistTo({ Storm: 0.5, Arcane: 0.3 }),
   intents: [
@@ -116,6 +130,7 @@ export const EMBERHIDE: EnemyArchetype = {
   baseHp: 44,
   basePoise: 10,
   cost: 2,
+  minLevel: 2,
   // The archetype §7.2 exists for: a wall against exactly one tag.
   resistances: resistTo({ Fire: 0.5, Physical: 0.15 }),
   intents: [
@@ -141,6 +156,7 @@ export const BERSERKER: EnemyArchetype = {
   baseHp: 62,
   basePoise: 14,
   cost: 3,
+  minLevel: 4,
   resistances: resistTo({ Physical: 0.25, Shadow: 0.2 }),
   intents: [
     { name: 'Wild Swing', weight: tick(8), damage: 9, applies: null },
