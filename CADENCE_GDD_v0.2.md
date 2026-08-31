@@ -92,6 +92,13 @@ actor.next_act_tick = now + delay
 | Heavy | 10 | 10 | 26 |
 | Ultimate | 16 | 16 | 60 |
 
+**[AMD] Weight is resolved per play, never stored.** §7.1's Attunement moves it
+by a tick and a gem's `weight_delta` moves it further, so the class table above
+is a *base* rather than an answer. Riders are summed on top of it at the moment
+a card is played and the result is floored at **1**: a Weight of 0 is a delay of
+0, and an actor that acts again on the tick it just acted never stops. The class
+table is never rewritten.
+
 ### 4.2 The visible queue
 
 Next **8** turn slots render as a strip at the top of combat. Enemy intents are telegraphed, so their next Weight is known and the forecast is honest.
@@ -205,6 +212,14 @@ Fixed authored skill table. Level *N* grants skill *N*, always, in order. **Ther
 
 **[AMD] The skill table is not yet authored.** §17 budgets 16 class skills; none are specified in this document. M0 runs on a **provisional 12-card deck** (5 Light / 4 Standard / 2 Heavy / 1 Ultimate) in `src/data/cards.m0.json`, sized to make the Cooldown pile bite. Whatever survives the M0 gate is promoted into this section as the real table; nothing in that file is a design commitment until then.
 
+**[AMD] The signature card, and a card that inflicts something.** §6.1 opens the
+run with one socket on "their signature card", which the unwritten table above
+does not name — until it is written, the signature is a **Standard** card, so
+the free socket sits on something the player actually reaches for. Separately,
+**a card must be able to apply a status**: the LINGER frame (§6.2) extends
+status durations, and with every status coming from enemy intents it had nothing
+to act on and would have shipped as decoration.
+
 **[FIX] Max HP grows +6 per level.** v0.1 had a fixed 70 Max HP while charging 8–18 Max HP per socket — socketing six cards would have consumed the entire health pool. A growing pool makes the socket cost a real but survivable trade, and it's necessary for boss scaling regardless.
 
 ### 5.2 XP
@@ -283,6 +298,16 @@ PoE's meta is rigid *because of* its depth: a huge but static option space with 
 
 ## 7. The Weave
 
+**[NEW] The tags.** v0.2 multiplied per tag without ever listing them. There are
+**six**, and a card carries **exactly one**: **Physical, Fire, Frost, Arcane,
+Shadow, Storm**. Six is load-bearing — §7.1 raises two and pushes two down, so
+six leaves two neutral and roughly a third of a deck moves on each roll: enough
+to force adaptation, not enough to brick a build (§7.4's concern).
+
+Words like *Multi*, *Charge* and *Break*, which §6.2 and §8.1 also call "tags",
+are **gem and frame vocabulary, not Weave tags**. They name what a gem does; the
+Weave has nothing to multiply them by.
+
 One panel. Every tag shows one final multiplier.
 
 ```
@@ -298,6 +323,13 @@ Run start rolls **2 Ascendant** (×1.35, −1 Weight) and **2 Suppressed** (×0.
 ### 7.2 Enemy resistance
 
 Generated enemies carry 0–60% tag resistance. Hard immunity exists on **elites only**, one tag maximum, always shown on the map node **before you commit**.
+
+**[AMD] Immunity is not 100% resistance.** Feeding `resist = 1` through §7's
+formula produces ×0, which the mandatory clamp then raises back to **×0.30** —
+turning "immune" into "70% resistant" silently. Immunity is therefore its own
+case, outside the clamp, and yields ×0. The distinction has to exist in the type
+from the start: retrofitting it after the clamp has shipped means auditing every
+call site instead of one.
 
 ### 7.3 Saturation [NEW math]
 
@@ -448,6 +480,11 @@ Speed deliberately does not scale with level. If enemy Speed grew, the entire qu
 | Warden | 70 | Huge Poise, telegraphs a Weight-16 hit |
 | Chime Adept | 115 | Applies Slow, punishes Heavy cards |
 | Glutton | 80 | Heals by consuming its own allies |
+
+**[AMD] Resistance is authored, and does not scale.** An archetype's tag
+resistance is part of what it *is*, like its Speed — a level says how much of it
+there is, not what it shrugs off. A resistance that grew with depth would make
+the Weave a tax on progress rather than a question about which card to reach for.
 
 ### 12.3 Boss design rules [NEW]
 
@@ -637,6 +674,15 @@ The combat model is a **pure, headless, deterministic module with zero Phaser im
 
 One run seed, **separate PRNG streams** for map, gem rolls, enemy generation, and combat variance — so changing one system doesn't reshuffle the others during testing. Stream positions are part of the save (§16). Enables seed replay (§13) and daily challenges for free.
 
+**[AMD] Fixed draws.** Any roll that picks from a pool — an Attunement shift, a
+socket attempt — must draw a **fixed number of times whatever it picks**.
+Rejection sampling makes a stream's position depend on its own outcome, and a
+position that depends on its outcome cannot be resumed from a save: the resumed
+run silently diverges from the one that was written. A socket attempt therefore
+draws even at 100%. The named streams are `map`, `gemRoll`, `enemyGen`,
+`combat`, and **`weave`** — the last added so an Attunement roll cannot reshuffle
+a fight.
+
 ### 20.3 Combat as a reducer
 
 `(State, Action) => State`, immutable, emitting an event log. Riddles, achievements, telemetry, replays, and the ghost preview all read that log. No game logic in Phaser update loops.
@@ -668,7 +714,15 @@ Verify Phaser v4 API specifics against current documentation — v4 changed enou
 
 ## 22. Open questions
 
-1. **Ultimates (Weight 16) may be unplayable.** Four rat turns for one card is hard to justify. Candidate fixes: Ultimates are cast from the Cooldown pile with a wind-up the queue displays; or they grant Insight on kill; or they exist only as capstone payoffs with a Weight refund on kill. **Unresolved — resolve in M0.** **[AMD]** Two of the three candidates are now implemented and switchable while playing (`U` in the M0 build): *immediate* (the baseline as written) and *windup* (committed now, lands at +Weight, the player keeps acting after 4 — and the queue shows the strike arriving in its own slot). A third, *refund*, returns half the Weight on a kill. Candidate (b), Insight on kill, is **not** implemented: there is no Insight system in M0 to reward, so it can only be judged in M1. The decision is made during the gate hour and written back here; see `docs/M0_GATE.md` §3.
+1. **Ultimates (Weight 16) may be unplayable.** **[AMD 2026-08-31]** Candidate
+(b) — *grants Insight on kill* — is now implemented as a fourth switchable rule,
+`insight`, because M1 built the Insight system it needed to mean anything. All
+four are live under `U` and the decision belongs to M1's gate (`docs/M1_GATE.md`
+§3). Separately, a wind-up Ultimate is now **priced at impact rather than at
+commit**: `landStrike` already expanded its AoE over the line standing when it
+arrived, so a damage figure frozen against a different board than the targets it
+lands on was never a real snapshot. Empower gained during a wind-up now boosts
+the landing blow. Four rat turns for one card is hard to justify. Candidate fixes: Ultimates are cast from the Cooldown pile with a wind-up the queue displays; or they grant Insight on kill; or they exist only as capstone payoffs with a Weight refund on kill. **Unresolved — resolve in M0.** **[AMD]** Two of the three candidates are now implemented and switchable while playing (`U` in the M0 build): *immediate* (the baseline as written) and *windup* (committed now, lands at +Weight, the player keeps acting after 4 — and the queue shows the strike arriving in its own slot). A third, *refund*, returns half the Weight on a kill. Candidate (b), Insight on kill, is **not** implemented: there is no Insight system in M0 to reward, so it can only be judged in M1. The decision is made during the gate hour and written back here; see `docs/M0_GATE.md` §3.
 2. **Is the fixed deck too deterministic?** If yes, the fix is loadout variants, never a card-choice screen.
 3. **Are three sockets too many for legibility?** May cap at 2.
 4. **Insight reroll cost of 1 is a guess.** If rerolling is cheap, generative crafting collapses into deterministic crafting and pillar P3 dies.
