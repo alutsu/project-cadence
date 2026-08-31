@@ -22,6 +22,7 @@ export const MUTED = '#7d8794';
 export const PLAYER_INK = '#d9b45b';
 export const ENEMY_INK = '#d99087';
 export const GUARD_INK = '#7fb3d5';
+export const DANGER_INK = '#e0705f';
 
 export const FONT = 'ui-monospace, "DejaVu Sans Mono", Menlo, monospace';
 

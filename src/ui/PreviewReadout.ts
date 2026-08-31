@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import type { ActionPreview } from '../sim/forecast.ts';
-import { ENEMY_INK, FONT, LAYOUT, MUTED, PLAYER_INK, TYPE } from './theme.ts';
+import { DANGER_INK, ENEMY_INK, FONT, LAYOUT, MUTED, PLAYER_INK, TYPE } from './theme.ts';
 
 const IDLE_HINT = 'hover a card to see where it puts you';
 
@@ -48,7 +48,7 @@ export class PreviewReadout {
       return;
     }
 
-    this.headline.setText(`${label} — ${landingOf(preview)}`).setColor(PLAYER_INK);
+    this.headline.setText(`${label} — ${landingOf(preview)}`).setColor(headlineInk(preview));
     const dealt = preview.hits.reduce((total, hit) => total + hit.amount, 0);
     const parts = [
       `${String(preview.enemyTurnsBeforePlayer)} enemy ${plural(preview.enemyTurnsBeforePlayer)} first`,
@@ -59,9 +59,7 @@ export class PreviewReadout {
       parts.push(`STAGGER +${String(stagger.delay)}`);
     }
 
-    this.detail
-      .setText(parts.join('   ·   '))
-      .setColor(staggerInk(preview.staggers.length, preview.incomingDamage));
+    this.detail.setText(parts.join('   ·   ')).setColor(detailInk(preview));
   }
 
   /** Nothing to hover once the fight is over. */
@@ -80,19 +78,29 @@ export class PreviewReadout {
  * A lethal card ends the fight on the player's own turn, so the tick it would
  * put them on never arrives. Saying "you act at t48" there is a lie the queue
  * cannot afford (P3) — the fight is what the player is choosing about.
+ *
+ * The HP rides with the tick rather than with the telegraphed damage beside it:
+ * what the window actually costs is Guard, every hit, and every status that
+ * resolves on the way (GDD §4.4, §4.5), which is a different number from the
+ * damage the enemies are advertising.
  */
 function landingOf(preview: ActionPreview): string {
   if (preview.outcome !== 'ongoing') return 'the encounter ends';
   if (preview.playerNextTick === null) return 'the encounter ends';
-  return `you act at t${String(preview.playerNextTick)}`;
+  if (preview.hpWhenPlayerActs === 0) return 'you die before your next turn';
+  return `you act at t${String(preview.playerNextTick)} on ${String(preview.hpWhenPlayerActs)} HP`;
 }
 
 function plural(turns: number): string {
   return turns === 1 ? 'turn' : 'turns';
 }
 
+function headlineInk(preview: ActionPreview): string {
+  return preview.hpWhenPlayerActs === 0 && preview.outcome === 'ongoing' ? DANGER_INK : PLAYER_INK;
+}
+
 /** A Stagger is the payoff moment, so it wins the line's colour (GDD §4.6). */
-function staggerInk(staggers: number, incoming: number): string {
-  if (staggers > 0) return PLAYER_INK;
-  return incoming > 0 ? ENEMY_INK : MUTED;
+function detailInk(preview: ActionPreview): string {
+  if (preview.staggers.length > 0) return PLAYER_INK;
+  return preview.incomingDamage > 0 ? ENEMY_INK : MUTED;
 }

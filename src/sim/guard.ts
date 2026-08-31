@@ -1,5 +1,6 @@
 import type { Actor } from './actor.ts';
 import { DEFAULT_RULES } from './rules.ts';
+import { addTicks, tick, type Tick } from './tick.ts';
 
 /**
  * Guard (GDD §4.4) — the game's only mitigation, and deliberately time-shaped.
@@ -11,6 +12,20 @@ export const GUARD_CAP = DEFAULT_RULES.guardCap;
 
 export function gainGuard(actor: Actor, amount: number, cap = GUARD_CAP): Actor {
   return { ...actor, guard: Math.min(cap, actor.guard + amount) };
+}
+
+/**
+ * The tick Guard reaches zero on, if nothing hits it first (GDD §4.4), or null
+ * when it never does — the M0 tuning console can set decay to 0.
+ *
+ * Lives here rather than in the HUD that prints it: the decay rate is a rule,
+ * and a caption that assumed 1/tick would quietly lie the moment the console
+ * moved it (CLAUDE.md §2.1 — the UI never computes a game number).
+ */
+export function guardHoldsUntil(guard: number, now: Tick, perTick: number): Tick | null {
+  if (guard <= 0) return now;
+  if (perTick <= 0) return null;
+  return addTicks(now, tick(Math.ceil(guard / perTick)));
 }
 
 /** Guard lost to the passage of time, never below zero. */

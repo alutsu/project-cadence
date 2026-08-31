@@ -1,9 +1,10 @@
 import type { Action } from './actions.ts';
 import type { Actor, Intent } from './actor.ts';
-import { reduce } from './combat.ts';
+import { advanceToDecision, reduce } from './combat.ts';
+import { absorb, decayGuard } from './guard.ts';
 import type { ActorId } from './ids.ts';
 import { actionDelay } from './speed.ts';
-import { findActor, type CombatOutcome, type CombatState } from './state.ts';
+import { findActor, playerActor, type CombatOutcome, type CombatState } from './state.ts';
 import { nextToAct } from './timeline.ts';
 import { addTicks, tick, type Tick } from './tick.ts';
 import { actorSpeed, currentIntent, isAlive, nextIntentIndex } from './actor.ts';
@@ -107,6 +108,65 @@ export interface PreviewHit {
 }
 
 /**
+ * A blow the player is due to take, already measured against the Guard they
+ * will have when it lands (GDD §4.4).
+ *
+ * §4.4 claims Guard is legible because it decays in the queue's own unit — but
+ * only if something on screen does the subtraction, and the UI is not allowed
+ * to (CLAUDE.md §2.1). This is that subtraction.
+ */
+export interface IncomingHit {
+  readonly source: ActorId;
+  /** The telegraphed intent's name, so the strip can name what is landing. */
+  readonly name: string;
+  readonly at: Tick;
+  readonly damage: number;
+  /** The player's Guard at `at`, after decay. */
+  readonly guard: number;
+  readonly absorbed: number;
+  /** What reaches HP. Zero means the Guard holds. */
+  readonly toHp: number;
+}
+
+/**
+ * The next enemy blow in the forecast, resolved against the Guard the player
+ * will have by the time it lands.
+ *
+ * Nothing but the player's own action can *raise* Guard, so this is exact for
+ * every action except Wait — and hovering Wait re-runs it on the state Wait
+ * would produce (GDD §4.3), which is how the +3 becomes visible as a defence
+ * rather than as a number on a button.
+ *
+ * Only the eight forecast slots are searched: a blow the strip cannot show is
+ * one the player cannot read, and there is nowhere to put the answer.
+ */
+export function nextIncomingHit(state: CombatState): IncomingHit | null {
+  const player = playerActor(state);
+  if (player === undefined || !isAlive(player)) return null;
+
+  for (const slot of forecastQueue(state)) {
+    const intent = slot.intent;
+    // A pending strike is the player's own Ultimate arriving (GDD §22 Q1).
+    if (slot.kind !== 'turn' || intent === null || intent.damage <= 0) continue;
+    if (findActor(state, slot.actor)?.side !== 'enemy') continue;
+
+    const guarded = decayGuard(player, slot.at - state.now, state.rules.guardDecayPerTick);
+    const { absorbed, toHp } = absorb(guarded, intent.damage);
+    return {
+      source: slot.actor,
+      name: intent.name,
+      at: slot.at,
+      damage: intent.damage,
+      guard: guarded.guard,
+      absorbed,
+      toHp,
+    };
+  }
+
+  return null;
+}
+
+/**
  * What an action would do, if taken now. Everything the hover state needs, and
  * nothing the UI has to work out for itself (GDD §15: the player should never do
  * multiplication in their head).
@@ -122,6 +182,17 @@ export interface ActionPreview {
   readonly enemyTurnsBeforePlayer: number;
   /** What those turns would cost, at their telegraphed damage. */
   readonly incomingDamage: number;
+  /**
+   * The next of those blows, measured against the Guard it would meet. The one
+   * number that answers "does my Guard survive this?" (GDD §4.4).
+   */
+  readonly nextHit: IncomingHit | null;
+  /**
+   * The HP the player would next act on, after Guard, every telegraphed hit and
+   * every status that resolves on the way (GDD §4.5). Zero means the window
+   * kills them — which is the thing the choice is actually about.
+   */
+  readonly hpWhenPlayerActs: number;
   /** Enemies this action would stagger, and by how much (GDD §4.6). */
   readonly staggers: readonly StaggerPreview[];
   /**
@@ -152,6 +223,11 @@ export function previewAction(state: CombatState, action: Action): ActionPreview
   const projected = result.step.state;
   const queue = forecastQueue(projected);
 
+  // Time resolving is not a second estimate of it: this runs the same
+  // `advanceToDecision` the commit will run, on a copy, and reads the player
+  // off the end (CLAUDE.md §2.2 — the preview has no path of its own).
+  const settled = advanceToDecision(projected).state;
+
   // "Before the player" is a question about queue *order*, not about tick
   // numbers: an actor sharing the player's tick still acts first if it wins the
   // Speed tie-break (GDD §4.1). Counting by tick silently under-reported that.
@@ -167,6 +243,8 @@ export function previewAction(state: CombatState, action: Action): ActionPreview
     playerNextTick,
     enemyTurnsBeforePlayer: before.length,
     incomingDamage: before.reduce((total, slot) => total + intentDamage(slot), 0),
+    nextHit: nextIncomingHit(projected),
+    hpWhenPlayerActs: playerActor(settled)?.hp ?? 0,
     staggers: result.step.events
       .filter((event) => event.kind === 'staggered')
       .map((event) => ({ actor: event.actor, delay: event.delay })),

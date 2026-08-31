@@ -1,6 +1,8 @@
 # M0 — The Gate
 
-**Status:** not yet run · **Build:** M0/S8 + difficulty pass · **Traces to:** GDD §18 (M0 gate), §21 Risk 1
+**Status:** run 2026-08-30 — **ambiguous** (§5); the Guard-readability pass is
+in, the one re-run is owed · **Build:** M0/S8 + Guard-readability pass ·
+**Traces to:** GDD §18 (M0 gate), §21 Risk 1
 
 > Play it for an hour with no gems at all. If moving your position in the turn
 > queue isn't fun by itself, stop. The gem system will not save it — it will
@@ -145,6 +147,13 @@ apart against two enemies or any real hit, so it may be a non-issue. Watch for
 whether it is ever the *tempting* line; if it is, GDD §4.3 already names the
 lever (Wait's Weight, not its draw).
 
+**[2026-08-30] The opposite showed up first.** Making the verdict visible made
+it visible that there usually isn't one: 3 Guard gained at t6 is 0 Guard at t9,
+and the rats in fight 1 are three ticks out. Outside the Wait-loop above, Wait's
+Guard is routinely dead before anything swings at it — which is the mechanical
+reason answer 2 came back "attack is worth it more than defence". Both readings
+point at the same knob (`J`/`K`, decay), and the hour is the place to settle it.
+
 
 These are the numbers the GDD itself flags as guesses. The tuning console exists
 so they can be chased inside the hour rather than between builds.
@@ -163,17 +172,74 @@ so they can be chased inside the hour rather than between builds.
 *Fill in during the hour. Then record the outcome in the closing commit, with
 the browser verification result (CLAUDE.md §7.4).*
 
-**Date:** · **Seed(s):** · **Build:**
+**Date:** 2026-08-30 · **Seed(s):** not recorded · **Build:** M0/S8 + difficulty
+pass (`6fac677`)
 
-1. Weaker card for queue position?
-2. Deliberate Wait?
-3. Preview changed a decision?
-4. Guard readable against the queue?
-5. Warden tension?
-6. Never played, and why?
+1. **Weaker card for queue position? — Yes.** "Very often I choose a combination
+   of weaker cards that will deal more damage instead of a heavy one, to also
+   avoid damage." Both halves of P1 are live: the queue position is paid for in
+   damage, and the reason to pay is what the enemy does in the gap.
+2. **Deliberate Wait? — No.** "Not really, I very often thought that attack is
+   worth it then defense." Wait was never the stated plan; attacking always
+   read as the better line.
+3. **Preview changed a decision? — Yes.** The same choice as in 1: the ghost
+   queue is what turned the light-card combination from an idea into the play.
+4. **Guard readable against the queue? — No.** "The information isn't clear
+   enough." Guard and the incoming hit are both on screen, but the comparison
+   between them is left to the player to do in their head.
+5. **Warden tension? — Yes.** "I had to calculate the weight and the damage so
+   that I could defeat him without taking too much damage." The wind-up is
+   doing its job: it turns a fight into an arithmetic problem with a deadline.
+6. **Never played, and why? — Can't tell.** "I think I have played all of them,
+   specially ultimates to end the fight." The end-of-encounter summary did not
+   settle it, so this reading is unresolved. The one signal in it: Ultimates
+   were used as *finishers*.
 
-**Outsider (20 minutes, cold):** questions 3, 4, 5 —
+**Outsider (20 minutes, cold):** not run.
 
-**Ultimate rule chosen:** ·
+**Ultimate rule chosen:** undecided — the 20-minutes-per-rule comparison in §3
+was not run, and answer 6 is not evidence for a rule. GDD §22 open question 1
+stays open.
 
-**Verdict:** pass / ambiguous / fail —
+**Verdict: ambiguous** — 1 and 3 are yes, 4 is no. Per §2 this is Guard's
+*presentation*, not the design; the gate gets one re-run after a
+Guard-readability pass.
+
+Answers 2 and 4 are one finding, not two. A player who cannot tell whether
+Guard survives the next hit cannot price defence, so attacking is correctly the
+safer read every time — Wait's disuse follows from Guard's illegibility rather
+than from Wait's Weight. Fix 4 before touching the §4 Wait lever; if Wait is
+still never worth stating a reason for once Guard is readable, *then* its
+Weight is the thing to move.
+
+**Still owed before the re-run is a complete gate reading:** the outsider pass
+(§2) and the Ultimate comparison (§3).
+
+---
+
+### The Guard-readability pass (2026-08-30)
+
+What the re-run is answering question 4 against. Every number below is computed
+in `/sim` and read by the UI, never worked out on screen (CLAUDE.md §2.1).
+
+- **The queue slot that hits you says whether Guard survives it.** The next
+  enemy blow's caption becomes `2 dmg · 1 through`, or `2 dmg · guard holds` in
+  Guard blue. It is the answer to question 4, printed inside the thing §4.4
+  claims you can already read it from. Only that one slot carries it: a second
+  blow's arithmetic depends on what the first one ate, and a verdict the sim
+  cannot stand behind is worse than none.
+- **A slot you meet with no Guard keeps its ordinary caption.** "6 through" and
+  "Gnaw 6" say the same thing; only one of them is worth the width (P5).
+- **The hover line says what the ticks cost, not what the enemies advertise.**
+  `you act at t25 on 54 HP` — after Guard, after every hit, after every Poison
+  proc on the way, which is a different number from the "6 incoming" beside it.
+  It comes from running the same `advanceToDecision` the commit will run, on a
+  copy, so it cannot drift from what happens.
+- **`GUARD 5 holds to t39` now reads the decay rate off the rules.** It assumed
+  1/tick, so it silently lied the moment `J`/`K` moved it — which is exactly
+  during the hour this console exists for.
+
+**What to watch for in the re-run:** whether the verdict appears often enough to
+be a tool. If Guard is nearly always gone before the blow lands, question 4 is
+answered "no, because there is nothing to survive" — a tuning finding, not a
+presentation one, and the §4 note above is where it goes.

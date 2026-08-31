@@ -1,16 +1,29 @@
 import Phaser from 'phaser';
-import type { ActionPreview, QueueSlot } from '../sim/forecast.ts';
-import { forecastQueue } from '../sim/forecast.ts';
+import type { ActionPreview, IncomingHit, QueueSlot } from '../sim/forecast.ts';
+import { forecastQueue, nextIncomingHit } from '../sim/forecast.ts';
 import type { ActorId } from '../sim/ids.ts';
 import { findActor, type CombatState } from '../sim/state.ts';
 import type { Tick } from '../sim/tick.ts';
-import { COLORS, ENEMY_INK, FONT, INK, LAYOUT, MUTED, PLAYER_INK, TYPE } from './theme.ts';
+import {
+  COLORS,
+  DANGER_INK,
+  ENEMY_INK,
+  FONT,
+  GUARD_INK,
+  INK,
+  LAYOUT,
+  MUTED,
+  PLAYER_INK,
+  TYPE,
+} from './theme.ts';
 
 interface SlotOptions {
   readonly state: CombatState;
   readonly slot: QueueSlot;
   readonly index: number;
   readonly ghost: GhostContext | null;
+  /** The blow this slot delivers to the player, if it is the next one. */
+  readonly verdict: IncomingHit | null;
 }
 
 interface GhostContext {
@@ -79,6 +92,9 @@ export class QueueStrip {
 
     const live = forecastQueue(state);
     const slots = preview === null ? live : preview.queue;
+    // Read off the state the strip is actually drawing: the ghost's Guard
+    // verdict belongs to the queue the action would produce, not to this one.
+    const hit = preview === null ? nextIncomingHit(state) : preview.nextHit;
     const ghost: GhostContext | null =
       preview === null
         ? null
@@ -90,7 +106,7 @@ export class QueueStrip {
           };
 
     slots.forEach((slot, index) => {
-      const view = this.slotView({ state, slot, index, ghost });
+      const view = this.slotView({ state, slot, index, ghost, verdict: verdictFor(slot, hit) });
       this.slots.push({ actor: slot.actor, view });
       this.container.add(view);
     });
@@ -101,7 +117,7 @@ export class QueueStrip {
   }
 
   private slotView(options: SlotOptions): Phaser.GameObjects.Container {
-    const { state, slot, index, ghost } = options;
+    const { state, slot, index, ghost, verdict } = options;
     const { queue } = LAYOUT;
     const actor = findActor(state, slot.actor);
     const isPlayer = actor?.side === 'player';
@@ -161,7 +177,7 @@ export class QueueStrip {
         y: 36,
         value: caption(options, isPlayer, landsFirst),
         size: TYPE.slotIntent,
-        color: captionInk(landsFirst),
+        color: captionInk(landsFirst, verdict),
         origin: CENTERED,
       }),
     );
@@ -193,15 +209,27 @@ const CENTERED = { x: 0.5, y: 0.5 } as const;
 
 const GHOST_ALPHA = 0.9;
 const STAGGER_KICK = 26;
-const STAGGER_INK = '#e0705f';
+const STAGGER_INK = DANGER_INK;
 
 function strokeFor(isPlayer: boolean, landsFirst: boolean): number {
   if (isPlayer) return COLORS.player;
   return landsFirst ? COLORS.danger : COLORS.panelEdge;
 }
 
-function captionInk(landsFirst: boolean): string {
-  return landsFirst ? '#e0705f' : MUTED;
+function captionInk(landsFirst: boolean, verdict: IncomingHit | null): string {
+  if (verdict !== null) return verdict.toHp === 0 ? GUARD_INK : DANGER_INK;
+  return landsFirst ? DANGER_INK : MUTED;
+}
+
+/**
+ * The Guard verdict belongs on one slot only — the blow it is a verdict about
+ * (P5). Guard the player does not have by then has nothing to say, so a slot
+ * that meets no Guard keeps its ordinary caption.
+ */
+function verdictFor(slot: QueueSlot, hit: IncomingHit | null): IncomingHit | null {
+  if (hit === null || hit.guard === 0) return null;
+  const isTheHit = slot.kind === 'turn' && slot.actor === hit.source && slot.at === hit.at;
+  return isTheHit ? hit : null;
 }
 
 function playerTick(state: CombatState, queue: readonly QueueSlot[]): Tick | null {
@@ -209,13 +237,22 @@ function playerTick(state: CombatState, queue: readonly QueueSlot[]): Tick | nul
 }
 
 function caption(options: SlotOptions, isPlayer: boolean, landsFirst: boolean): string {
-  const { slot, ghost } = options;
+  const { slot, ghost, verdict } = options;
 
   if (slot.kind === 'strike') return `lands · ${String(slot.intent?.damage ?? 0)} dmg`;
 
   if (isPlayer) {
     const from = ghost?.livePlayerTick;
     return from === undefined || from === null ? 'your turn' : `now t${String(from)}`;
+  }
+
+  // GDD §4.4: Guard is only readable off the queue if the queue says whether it
+  // survives. This slot is the one the player is deciding against, so it spends
+  // its caption on the answer rather than on the intent's name.
+  if (verdict !== null) {
+    return verdict.toHp === 0
+      ? `${String(verdict.damage)} dmg · guard holds`
+      : `${String(verdict.damage)} dmg · ${String(verdict.toHp)} through`;
   }
 
   const intent = slot.intent;

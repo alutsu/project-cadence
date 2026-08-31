@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
+import { guardHoldsUntil } from '../sim/guard.ts';
 import { playerActor, type CombatState } from '../sim/state.ts';
-import { describeStatuses, guardHoldsUntil } from './statusText.ts';
+import { describeStatuses } from './statusText.ts';
 import {
   COLORS,
   ENEMY_INK,
@@ -112,7 +113,10 @@ export class ActionBar {
 
 function guardCaption(guard: number, state: CombatState): string {
   if (guard === 0) return '';
-  return `GUARD ${String(guard)}   holds to t${String(guardHoldsUntil(guard, state.now))}`;
+  const zeroAt = guardHoldsUntil(guard, state.now, state.rules.guardDecayPerTick);
+  // Kept short deliberately: the hand's leftmost card is close behind this line.
+  const window = zeroAt === null ? 'no decay' : `holds to t${String(zeroAt)}`;
+  return `GUARD ${String(guard)}   ${window}`;
 }
 
 function outcomeCaption(state: CombatState): string {
