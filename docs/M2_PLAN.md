@@ -161,24 +161,40 @@ Eight sprints. The riskiest thing in M2 is not the map or the save — it is tha
 around a run nobody can finish. So the power curve comes first and the harness
 answers the question before a single node is drawn.
 
-| # | Days | Scope | Exit criterion |
+| # | Days | Scope | State |
 |---|---|---|---|
-| **S1** | 5 | §5.1's sixteen skills authored; the level table, XP (§5.2) and Threat (§5.3); Max HP growing +6 a level | ~~The harness clears the set at least sometimes.~~ **Done, and the criterion was wrong** (D35a): the level curve cannot be read against a six-fight chain authored for a 12-card deck. What S1 delivers is the *curve itself*; whether it is tuned correctly is now S4's question, measured against a real run |
-| **S2** | 4 | §12.1's generator on `enemyGen`; the archetype roster grown to feed it; `ENCOUNTERS` demoted to fixtures | A generated Dungeon at a given Threat is reproducible from its seed, and the 48 existing references to the fixed list still compile and pass |
-| **S3** | 4 | §11's map on the `map` stream: 4 Depths, 2-of-4 node choice, Omen tags, Threat rising per node entered; a run-flow reducer so the harness plays the *shipping* flow | The same seed lays out the same map; a node shows its Threat and Omen *before* it is entered and its composition only after; a headless test plays a full 4-Depth run |
-| **S3a** | 2 | **The real S1 measurement**, now that there is a run to make it against: win rate by Depth, and `ascetic` measured against every other builder | **At least two builders beat `ascetic`** — the direct test of §5.1 `[FIX]`'s thesis that a growing pool makes the socket cost survivable, and the one number that does not depend on the policy skill floor. Win rate is read as a *trend against the previous run*, not against an absolute target (D35a) |
-| **S4** | 4 | §9's ledger — gold, the Market, card removal at 60/120/240/480; the Sanctum | A run's totals land near §9's targets (~450 gold, ~9 materials, ~7 Insight) across the harness |
-| **S5** | 5 | Relics: the atom registry, ~10 of §10's 24, elites as their source | Every relic has a drawback the parser enforces; an unregistered relic atom fails at load naming the relic |
-| **S6** | 4 | §16 save and resume: versioned, pure serialization, the IndexedDB adapter | **A run resumed from a save byte-matches one that never stopped** — same event log, same stream positions |
-| **S7** | 5 | The Clockeater (§12.3); §13's run summary and "retry this seed"; MapScene and the scene split | A complete run can be played from first node to boss kill in a browser |
-| **S8** | 4 | Balance against §19; the 35-minute timing budget (§11); then the gate | A run takes 30–40 minutes; the harness wins often enough to read §19's diversity metric; the gate is run |
+| **S1** | 5 | §5.1's sixteen skills authored; the level table, XP (§5.2) and Threat (§5.3); Max HP growing +6 a level | **done** (`2497b8b`). Its exit criterion was wrong and is recorded as such (D35a): the curve cannot be read against a six-fight chain authored for a 12-card deck |
+| **S2** | 4 | §16 save and resume: versioned, pure serialization, the IndexedDB adapter | **done** (`4c09181`), and pulled forward from S6 deliberately — the machinery is the hard part and a save shape designed after eight sprints of new fields is a rewrite. A run resumed at every node boundary byte-matches one that never stopped |
+| **S3** | 4 | §11's map on the `map` stream: 4 Depths, 2-of-4 node choice, Omen tags, Threat per node; a run-flow reducer so the harness plays the *shipping* flow | **done** (`c77656d`). The map is drawn once at run start, so no route can move the stream |
+| **S4** | 4 | §12.1's generator on `enemyGen`; the archetype roster grown to feed it; `ENCOUNTERS` demoted to fixtures | **done** (`119c1dd`, `4c337eb`). Archetypes carry a cost *and* a minimum level: cost decides how many, level decides which |
+| **S5** | 4 | §9's ledger — gold, the Market, card removal at 60/120/240/480 | **not started.** The map offers Market nodes and entering one does nothing; `SaveV1.gold` is a field written as 0 |
+| **S6** | 5 | Relics: the atom registry, ~8 of §10's 24, elites as their source | **not started.** Elites are generated and flagged on the map but drop nothing |
+| **S7** | 5 | The Clockeater (§12.3); §13's run summary and "retry this seed"; MapScene and the scene split | **not started.** A boss node currently generates like a Dungeon — a playtest met a lone Emberhide as a Depth-1 boss. `CombatScene` is still the only scene, so the map is walked by a stand-in that takes the first node offered |
+| **S8** | 4 | Balance against §19; the 35-minute timing budget (§11); then the gate | **not started**, and it inherits three unresolved findings — see §4.1 |
 
-≈ 7 working weeks, against §18's 6 — over, and the overrun is S1's fault by
-design. If S1 shows the game is winnable with levels alone, S2 starts on time
-and the rest holds.
+### 4.1 What S8 inherits
 
-**The first moment M2 is real: end of S3**, when a run has a route through it.
-**The first moment it is a game: end of S7.**
+Three things playtests found that are balance rather than structure, listed here
+so they are not rediscovered:
+
+- **The player's damage does not scale.** Enemy HP grows 2.5× from level 0 to 5;
+  the best card stays flat at 15 until Crush at level 8. §6.2's gems are what
+  should close that gap, which makes it §22 Q4's question rather than a number
+  to nudge.
+- **`ascetic` still wins.** The harness builders end around 40 Max HP against
+  its 78, having socketed everything affordable. S3a's criterion — *at least two
+  builders beat `ascetic`* — is **not met**, and it is the direct test of §5.1
+  `[FIX]`'s thesis. It needs a human choosing selectively before it can be read.
+- **§22 Q6 is half open.** The decay is settled on evidence (§4.4 [AMD]); the
+  **cap of 40 is untested** and nothing in play has come near it.
+
+≈ 7 working weeks against §18's 6. Four sprints are done and the remaining four
+are the ones that make a run a *game* rather than a loop: something to spend
+gold on, something to find, a boss worth the Depth, and a screen to choose from.
+
+**The first moment M2 is real was the end of S3**, when a run had a route
+through it. **The first moment it is a game is the end of S7** — until the map
+has a screen, the player is not choosing anything about it.
 
 ---
 
