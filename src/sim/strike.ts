@@ -33,6 +33,15 @@ export interface ResolvedHit {
   /** What lands, after the Weave and after Empower or Weaken. Rounded once. */
   readonly amount: number;
   /**
+   * What the §4.6 Poise threshold is compared against. Equal to `amount` unless
+   * a BREAK gem is seated, which is exactly what §6.2 [AMD] means by "+% damage
+   * *counted for the Poise check*" — the blow does not hit harder, it shakes
+   * harder.
+   */
+  readonly poiseAmount: number;
+  /** BREAK's other half: added to the first Stagger before the ladder halves. */
+  readonly staggerBonus: number;
+  /**
    * The tag the blow carries, or null for an enemy intent. Enemies strike with
    * no tag: §7 prices *your* tags against *their* resistance, and the player
    * has no resistance table to price anything against.
@@ -62,17 +71,22 @@ export function resolveHit(order: HitOrder, weave: WeaveSnapshot): ResolvedHit {
     resistances: defender.resistances,
   });
   const scaled = resolved.basePerTarget * verdict.multiplier * damageScale(attacker.statuses);
+  const amount = Math.round(scaled);
 
-  return { amount: Math.round(scaled), tag: resolved.tag, verdict };
+  return {
+    amount,
+    poiseAmount: Math.round(scaled * resolved.poiseFactor),
+    staggerBonus: resolved.staggerBonus,
+    tag: resolved.tag,
+    verdict,
+  };
 }
 
 /** An enemy's telegraphed blow. No card, no tag, no Weave — just Empower. */
 export function resolveIntent(attacker: Actor, intent: Intent): ResolvedHit {
-  return {
-    amount: Math.round(intent.damage * damageScale(attacker.statuses)),
-    tag: null,
-    verdict: null,
-  };
+  const amount = Math.round(intent.damage * damageScale(attacker.statuses));
+  // The player has no Poise (GDD §4.6), so an intent has nothing to shake.
+  return { amount, poiseAmount: amount, staggerBonus: 0, tag: null, verdict: null };
 }
 
 export interface DamageOrder {
@@ -91,7 +105,7 @@ export function applyDamage(state: CombatState, order: DamageOrder): CombatStep 
   const target = findActor(state, order.target);
   if (target === undefined || !isAlive(target)) return { state, events: [] };
 
-  const { amount, tag } = order.hit;
+  const { amount, poiseAmount, staggerBonus, tag } = order.hit;
   const { actor: wounded, absorbed } = absorb(target, amount);
 
   const events: CombatEvent[] = [
@@ -111,10 +125,11 @@ export function applyDamage(state: CombatState, order: DamageOrder): CombatStep 
   // GDD §4.6: a single hit at or above the Poise threshold staggers. The check
   // uses the damage the attack carried, before Guard soaked any of it — and
   // after the Weave, because a resisted blow is a smaller blow, and §4.6 asks
-  // what actually landed rather than what was printed on the card.
+  // what actually landed rather than what was printed on the card. A BREAK gem
+  // moves this figure without moving the damage (§6.2 [AMD]).
   const shaken =
-    isAlive(wounded) && breaksPoise(wounded, amount)
-      ? stagger(wounded, state.rules.firstStagger)
+    isAlive(wounded) && breaksPoise(wounded, poiseAmount)
+      ? stagger(wounded, state.rules.firstStagger + staggerBonus)
       : null;
   if (shaken !== null) {
     events.push({ kind: 'staggered', at: state.now, actor: order.target, delay: shaken.delay });

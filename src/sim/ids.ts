@@ -4,6 +4,7 @@
  */
 export type ActorId = string & { readonly __brand: 'ActorId' };
 export type CardId = string & { readonly __brand: 'CardId' };
+export type GemId = string & { readonly __brand: 'GemId' };
 
 function requireNonEmpty(value: string, kind: string): string {
   if (value.length === 0) throw new RangeError(`${kind} must not be empty`);
@@ -16,4 +17,8 @@ export function actorId(value: string): ActorId {
 
 export function cardId(value: string): CardId {
   return requireNonEmpty(value, 'CardId') as CardId;
+}
+
+export function gemId(value: string): GemId {
+  return requireNonEmpty(value, 'GemId') as GemId;
 }

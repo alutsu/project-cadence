@@ -9,6 +9,11 @@ import { cardId, type CardId } from '../../src/sim/ids.ts';
 import { createRng, type Rng } from '../../src/sim/rng.ts';
 import { findActor, type CombatState } from '../../src/sim/state.ts';
 import { damagePerTarget } from '../../src/sim/targeting.ts';
+import { damageAgainst } from '../../src/sim/strike.ts';
+import { gemId, type GemId } from '../../src/sim/ids.ts';
+import type { BuildState, CardSockets, Gem } from '../../src/sim/gem.ts';
+import { TAGS } from '../../src/sim/tag.ts';
+import { NEUTRAL_WEAVE, type Attunement, type WeaveSnapshot } from '../../src/sim/weave.ts';
 
 const CATALOGUE = m0Catalogue();
 const ALL_CARDS: readonly CardId[] = Object.keys(CATALOGUE).map(cardId);
@@ -17,6 +22,95 @@ function pick<T>(rng: Rng, items: readonly T[]): T {
   const chosen = items[rng.nextInt(items.length)];
   if (chosen === undefined) throw new Error('cannot pick from an empty list');
   return chosen;
+}
+
+const ATTUNEMENTS: readonly Attunement[] = ['ascendant', 'neutral', 'suppressed'];
+
+/** A Weave that is actually doing something, so the preview has to price it. */
+function randomWeave(rng: Rng): WeaveSnapshot {
+  return {
+    attunement: Object.fromEntries(
+      TAGS.map((tag) => [tag, pick(rng, ATTUNEMENTS)]),
+    ) as WeaveSnapshot['attunement'],
+    saturation: Object.fromEntries(
+      TAGS.map((tag) => [tag, rng.nextInt(4) * 0.06]),
+    ) as WeaveSnapshot['saturation'],
+  };
+}
+
+const GEM_SHAPES: readonly ((id: GemId, rng: Rng) => Gem)[] = [
+  (id, rng) => ({
+    id,
+    frame: 'REPEAT',
+    tier: 1,
+    words: [],
+    weightDelta: 1 + rng.nextInt(3),
+    effects: [
+      { type: 'EXTRA_STRIKE', value: 1, tag: null },
+      { type: 'DAMAGE_MULT', value: -0.3 - rng.nextInt(3) * 0.05, tag: null },
+    ],
+    affixes: [],
+  }),
+  (id, rng) => ({
+    id,
+    frame: 'HASTE',
+    tier: 2,
+    words: [],
+    weightDelta: -1 - rng.nextInt(2),
+    effects: [
+      { type: 'RECOVERY_DELTA', value: -2 - rng.nextInt(6), tag: null },
+      { type: 'DAMAGE_MULT', value: -0.2, tag: null },
+    ],
+    affixes: [],
+  }),
+  (id, rng) => ({
+    id,
+    frame: 'KINDLE',
+    tier: 3,
+    words: [],
+    weightDelta: 0,
+    effects: [{ type: 'CONVERT_TAG', value: 0, tag: pick(rng, TAGS) }],
+    affixes: [],
+  }),
+  (id, rng) => ({
+    id,
+    frame: 'BREAK',
+    tier: 4,
+    words: [],
+    weightDelta: 0,
+    effects: [
+      { type: 'POISE_FACTOR', value: 0.2 + rng.nextInt(4) * 0.15, tag: null },
+      { type: 'STAGGER_BONUS', value: rng.nextInt(2), tag: null },
+      { type: 'DAMAGE_MULT', value: -0.2, tag: null },
+    ],
+    affixes: [],
+  }),
+];
+
+/**
+ * A build with gems actually seated. This is what makes the equivalence test
+ * cover M1 rather than only M0: the preview now has to fold sockets, convert a
+ * tag, split a REPEAT into two blows and price each against its own defender,
+ * and still land on exactly what the commit produces.
+ */
+function randomBuild(rng: Rng, deck: readonly CardId[]): BuildState {
+  const gems: Record<string, Gem> = {};
+  const sockets: Record<string, CardSockets> = {};
+
+  for (const card of new Set(deck)) {
+    const opened = rng.nextInt(4);
+    if (opened === 0) continue;
+
+    const seated: GemId[] = [];
+    for (let socket = 0; socket < opened; socket += 1) {
+      const id = gemId(`${card}_${String(socket)}`);
+      gems[id] = pick(rng, GEM_SHAPES)(id, rng);
+      seated.push(id);
+    }
+    sockets[card] = { opened, gems: seated, scarred: false };
+  }
+
+  return { gems, sockets };
 }
 
 /** A varied opening: a random subset of the encounter and a random hand. */
@@ -30,7 +124,23 @@ function randomOpening(rng: Rng): CombatState {
   const deckSize = 1 + rng.nextInt(8);
   const deck = Array.from({ length: deckSize }, () => pick(rng, ALL_CARDS));
 
-  return advanceToDecision(startCombat({ actors, catalogue: CATALOGUE, deck, rng }).state).state;
+  // Half the cases are built and half are bare, so a regression that only
+  // shows up with gems and one that only shows up without both get caught.
+  const built = rng.nextInt(2) === 1;
+  const setup = built
+    ? { build: randomBuild(rng, deck), weave: randomWeave(rng) }
+    : { build: undefined, weave: NEUTRAL_WEAVE };
+
+  return advanceToDecision(
+    startCombat({
+      actors,
+      catalogue: CATALOGUE,
+      deck,
+      rng,
+      weave: setup.weave,
+      ...(setup.build === undefined ? {} : { build: setup.build }),
+    }).state,
+  ).state;
 }
 
 function legalActions(state: CombatState): readonly Action[] {
@@ -142,10 +252,15 @@ describe('ghost preview equivalence (CLAUDE.md §7.1, GDD §4.2)', () => {
       .map((event) => ({ target: event.target, amount: event.amount }));
 
     expect(preview.hits).toEqual(dealt);
-    // Not the printed figure: an AoE lands 60% of it on each enemy (GDD §4.8).
+
+    // Not the printed figure, and no longer even the AoE share of it: the
+    // Weave prices the blow against this defender's resistance (GDD §7.2), so
+    // the only honest reference is the sim's own reading of the same card.
     const definition = CATALOGUE[card];
-    if (definition === undefined) throw new Error('card is not in the catalogue');
-    expect(preview.hits[0]?.amount).toBe(damagePerTarget(definition));
+    const struck = findActor(state, target.id);
+    if (definition === undefined || struck === undefined) throw new Error('unusable case');
+    expect(preview.hits[0]?.amount).toBe(damageAgainst(state, definition, struck.id));
+    expect(damagePerTarget(definition)).toBeGreaterThan(0);
   });
 });
 
@@ -223,5 +338,27 @@ describe('what the preview tells the player (GDD §4.2, §15)', () => {
 
     const survivable = previewAction(opened, { kind: 'play', card: cardId('crush'), target: RAT });
     expect(survivable?.outcome).toBe('ongoing');
+  });
+});
+
+/**
+ * The generator is only worth its runtime if it actually produces the states it
+ * claims to. A build that silently came out empty would leave the M1 half of
+ * the highest-value test in the codebase (CLAUDE.md §7.1) asserting nothing.
+ */
+describe('the generated cases really are built (docs/M1_PLAN.md §5)', () => {
+  it('produces socketed states, with gems seated and a Weave that moves', () => {
+    const rng = createRng(20260829, 'combat');
+    let socketed = 0;
+    let moved = 0;
+
+    for (let encounter = 0; encounter < 90; encounter += 1) {
+      const state = randomOpening(rng);
+      if (Object.keys(state.build.sockets).length > 0) socketed += 1;
+      if (TAGS.some((tag) => state.weave.attunement[tag] !== 'neutral')) moved += 1;
+    }
+
+    expect(socketed).toBeGreaterThan(20);
+    expect(moved).toBeGreaterThan(20);
   });
 });

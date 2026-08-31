@@ -1,0 +1,132 @@
+{
+  "_comment": "Gem frames (GDD §6.2). A frame is a recipe, not code (docs/M1_PLAN.md D33): it names which registered effect atoms it rolls and the range each rolls in, per tier. Crafting reads this in S4; S3 authors it and validates it. Only the four modify-phase frames are here — CHARGE, SPEND, SIPHON, ECHO, WARD and LINGER all accumulate across a fight and arrive with the react phase in S4, together with the atoms they need. Every frame carries a real drawback, which §6.2 requires and §10 explains: a pure upgrade creates a known-correct ranking, which is the meta this design exists to avoid. Ranges are provisional and are what the S8 balance pass moves first.",
+  "frames": [
+    {
+      "id": "REPEAT",
+      "effect": "+1 strike, damage split",
+      "drawback": "+Weight",
+      "rolls": [
+        {
+          "type": "EXTRA_STRIKE",
+          "tiers": [
+            [1, 1],
+            [1, 1],
+            [1, 1],
+            [1, 2]
+          ]
+        },
+        {
+          "type": "DAMAGE_MULT",
+          "tiers": [
+            [-0.45, -0.4],
+            [-0.42, -0.36],
+            [-0.38, -0.32],
+            [-0.35, -0.28]
+          ]
+        },
+        {
+          "type": "WEIGHT_DELTA",
+          "tiers": [
+            [2, 3],
+            [2, 3],
+            [1, 2],
+            [1, 2]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "BREAK",
+      "effect": "+% damage counted for the Poise check, +Stagger",
+      "drawback": "-Damage",
+      "rolls": [
+        {
+          "type": "POISE_FACTOR",
+          "tiers": [
+            [0.2, 0.3],
+            [0.3, 0.45],
+            [0.45, 0.6],
+            [0.6, 0.8]
+          ]
+        },
+        {
+          "type": "STAGGER_BONUS",
+          "tiers": [
+            [0, 0],
+            [0, 1],
+            [1, 1],
+            [1, 2]
+          ]
+        },
+        {
+          "type": "DAMAGE_MULT",
+          "tiers": [
+            [-0.3, -0.25],
+            [-0.27, -0.22],
+            [-0.24, -0.18],
+            [-0.2, -0.15]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "HASTE",
+      "effect": "-Weight or -Recovery",
+      "drawback": "-Damage",
+      "rolls": [
+        {
+          "type": "WEIGHT_DELTA",
+          "tiers": [
+            [-1, -1],
+            [-1, -1],
+            [-2, -1],
+            [-2, -1]
+          ]
+        },
+        {
+          "type": "RECOVERY_DELTA",
+          "tiers": [
+            [-3, -2],
+            [-5, -3],
+            [-8, -5],
+            [-12, -8]
+          ]
+        },
+        {
+          "type": "DAMAGE_MULT",
+          "tiers": [
+            [-0.25, -0.2],
+            [-0.22, -0.17],
+            [-0.2, -0.14],
+            [-0.17, -0.12]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "KINDLE",
+      "effect": "Convert damage to a tag",
+      "drawback": "Exposes you to that tag's Weave value",
+      "rolls": [
+        {
+          "type": "CONVERT_TAG",
+          "tiers": [
+            [0, 0],
+            [0, 0],
+            [0, 0],
+            [0, 0]
+          ]
+        },
+        {
+          "type": "DAMAGE_MULT",
+          "tiers": [
+            [-0.1, -0.05],
+            [-0.05, 0],
+            [0, 0.05],
+            [0.05, 0.12]
+          ]
+        }
+      ]
+    }
+  ]
+}

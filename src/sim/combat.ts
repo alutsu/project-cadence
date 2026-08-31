@@ -19,6 +19,7 @@ import type { ActorId, CardId } from './ids.ts';
 import { BASE_SPEED, actionDelay, combatSeedTick, drawsOnAction, effectiveSpeed } from './speed.ts';
 import { strikeTargets } from './targeting.ts';
 import { nextToAct } from './timeline.ts';
+import { EMPTY_BUILD, type BuildState } from './gem.ts';
 import { resolveCard, type ResolvedCard } from './resolve.ts';
 import { applyDamage, resolveHit, resolveIntent } from './strike.ts';
 import {
@@ -77,6 +78,8 @@ export interface CombatSetup {
    * unchanged by the Weave arriving.
    */
   readonly weave?: WeaveSnapshot;
+  /** Sockets and gems. Omitted means an unbuilt deck — M0's every test. */
+  readonly build?: BuildState;
 }
 
 /** GDD §4.1: seed every actor at `ceil(600 / speed)`; faster actors act first. */
@@ -86,6 +89,7 @@ export function startCombat(setup: CombatSetup): CombatStep {
     now: TICK_ZERO,
     rules: setup.rules ?? DEFAULT_RULES,
     weave: setup.weave ?? NEUTRAL_WEAVE,
+    build: setup.build ?? EMPTY_BUILD,
     pending: [],
     actors,
     catalogue: setup.catalogue,
@@ -265,7 +269,24 @@ function strikeAll(state: CombatState, order: StrikeOrder): CombatStep {
   const events: CombatEvent[] = [];
   let current = state;
 
-  for (const target of strikeTargets(state, order.resolved.targeting, order.chosen)) {
+  // REPEAT swings the card again (GDD §6.2). A whole extra sweep rather than a
+  // doubled number: each blow can kill, and each is checked against Poise on
+  // its own, so two halves of a split are not one hit that staggers.
+  for (let swing = 0; swing < order.resolved.strikes; swing += 1) {
+    const swept = strikeOnce(current, order);
+    current = swept.state;
+    events.push(...swept.events);
+  }
+
+  return { state: current, events };
+}
+
+/** One sweep of a card across everything it reaches (GDD §4.8). */
+function strikeOnce(state: CombatState, order: StrikeOrder): CombatStep {
+  const events: CombatEvent[] = [];
+  let current = state;
+
+  for (const target of strikeTargets(current, order.resolved.targeting, order.chosen)) {
     // Priced per defender, not once for the line: §7.2's resistance is a
     // property of the enemy, so an AoE across a resistant Warden and an
     // unresistant rat lands two different numbers from the same card.
@@ -576,7 +597,7 @@ function commitPlay(
   // Resolved once, here, and every consumer below reads the result rather than
   // the printed card: Weight, Recovery and damage all move (GDD §7.1, §6.2) and
   // a second reading of the card is a second answer (docs/M1_PLAN.md D27).
-  const resolved = resolveCard(state.weave, card);
+  const resolved = resolveCard(state.weave, card, state.build);
 
   const struck = windup
     ? commitPending(bled.state, { actor, resolved, target })

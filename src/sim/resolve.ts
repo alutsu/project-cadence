@@ -1,4 +1,12 @@
 import type { CardDefinition, CardTargeting } from './card.ts';
+import { EMPTY_BUILD, gemsIn, type BuildState, type Gem } from './gem.ts';
+import { foldModifiers, modifierOf, NO_MODIFIER, type CardModifier } from './gemEffects.ts';
+// Imported for its registrations, not for a binding. The registry is only
+// Open/Closed if it is *populated* — a consumer that forgets this import gets a
+// loud throw rather than silent gems, but relying on every caller to remember
+// is a footgun, and there is exactly one standard set (docs/M1_PLAN.md D33).
+// Adding an atom still costs one line in that module and no edit here.
+import './standardEffects.ts';
 import type { CardId } from './ids.ts';
 import type { Tag } from './tag.ts';
 import { damagePerTarget } from './targeting.ts';
@@ -22,10 +30,23 @@ export interface ResolvedCard {
   readonly name: string;
   readonly tag: Tag;
   readonly targeting: CardTargeting;
-  /** What one enemy takes before the Weave and before Empower or Weaken. */
+  /**
+   * What one enemy takes before the Weave and before Empower or Weaken.
+   *
+   * Deliberately *not* rounded: the AoE share was already rounded, because that
+   * is the figure the card face prints (GDD §4.8), and the final blow rounds
+   * once in `resolveHit`. A gem multiplier folded in between those two must not
+   * add a third rounding, or the hover and the commit drift by a point.
+   */
   readonly basePerTarget: number;
   readonly weight: Tick;
   readonly recovery: Tick;
+  /** 1, plus REPEAT's extra blows (GDD §6.2). */
+  readonly strikes: number;
+  /** BREAK: what the §4.6 Poise check multiplies the landed damage by. */
+  readonly poiseFactor: number;
+  /** BREAK: added to the first Stagger before the ladder halves it (§4.6). */
+  readonly staggerBonus: number;
 }
 
 /**
@@ -36,6 +57,8 @@ export interface ResolvedCard {
  */
 export const MIN_WEIGHT = 1;
 const MIN_RECOVERY = 0;
+/** A card always swings at least once, however badly its gems roll. */
+const MIN_STRIKES = 1;
 
 /**
  * GDD §7.1: an Ascendant tag is −1 Weight and a Suppressed one is +1.
@@ -49,16 +72,42 @@ function riddenWeight(base: Tick, weave: WeaveSnapshot, tag: Tag): Tick {
   return tick(Math.max(MIN_WEIGHT, base + rider));
 }
 
+/** Every gem seated in the card, folded in socket order (docs/M1_PLAN.md D33). */
+function seatedModifier(card: CardDefinition, gems: readonly Gem[]): CardModifier {
+  return gems.reduce(
+    (total, gem) =>
+      foldModifiers(
+        foldModifiers(total, { ...NO_MODIFIER, weightDelta: gem.weightDelta }),
+        foldModifiers(modifierOf(gem.effects, card), modifierOf(gem.affixes, card)),
+      ),
+    NO_MODIFIER,
+  );
+}
+
 /** Everything about a play that does not depend on who receives it. */
-export function resolveCard(weave: WeaveSnapshot, card: CardDefinition): ResolvedCard {
+export function resolveCard(
+  weave: WeaveSnapshot,
+  card: CardDefinition,
+  build: BuildState = EMPTY_BUILD,
+): ResolvedCard {
+  const modifier = seatedModifier(card, gemsIn(build, card.id));
+
+  // KINDLE converts before the Weave is consulted, because §6.2's drawback is
+  // that the conversion "exposes you to that tag's Weave value" — the new tag
+  // is what gets priced, and what carries §7.1's ±1 Weight rider.
+  const tag = modifier.convertTag ?? card.tag;
+
   return {
     card: card.id,
     name: card.name,
-    tag: card.tag,
+    tag,
     targeting: card.targeting,
-    basePerTarget: damagePerTarget(card),
-    weight: riddenWeight(card.weight, weave, card.tag),
-    recovery: tick(Math.max(MIN_RECOVERY, card.recovery)),
+    basePerTarget: damagePerTarget(card) * modifier.damageMult,
+    weight: riddenWeight(tick(Math.max(0, card.weight + modifier.weightDelta)), weave, tag),
+    recovery: tick(Math.max(MIN_RECOVERY, card.recovery + modifier.recoveryDelta)),
+    strikes: Math.max(MIN_STRIKES, 1 + modifier.extraStrikes),
+    poiseFactor: modifier.poiseFactor,
+    staggerBonus: modifier.staggerBonus,
   };
 }
 
@@ -69,6 +118,10 @@ export function resolveCard(weave: WeaveSnapshot, card: CardDefinition): Resolve
  * itself (CLAUDE.md §2.1) — a card that says W4 while the queue moves by 3 is
  * the exact failure GDD §15 calls out.
  */
-export function resolvedWeight(weave: WeaveSnapshot, card: CardDefinition): Tick {
-  return riddenWeight(card.weight, weave, card.tag);
+export function resolvedWeight(
+  weave: WeaveSnapshot,
+  card: CardDefinition,
+  build: BuildState = EMPTY_BUILD,
+): Tick {
+  return resolveCard(weave, card, build).weight;
 }

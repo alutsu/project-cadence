@@ -1,6 +1,7 @@
 import { isAlive, type Actor } from './actor.ts';
 import type { CardCatalogue } from './card.ts';
 import type { CombatEvent } from './events.ts';
+import type { BuildState } from './gem.ts';
 import type { ResolvedCard } from './resolve.ts';
 import type { CombatRules } from './rules.ts';
 import type { ActorId, CardId } from './ids.ts';
@@ -58,6 +59,15 @@ export interface CombatState {
    * differently, and the ghost preview clones the state, not the module.
    */
   readonly weave: WeaveSnapshot;
+  /**
+   * What is socketed where (GDD §6.1, §6.2), carried in the state for the same
+   * reason `rules` and `weave` are — and for one stronger one. `previewAction`
+   * runs the real reducer on this value; a build living anywhere else would be
+   * a thing the preview could not clone, and the ghost queue would stop being
+   * the commit (CLAUDE.md §7.1). No rolling happens here: a gem arrives from
+   * the run layer with its numbers already fixed (docs/M1_PLAN.md §3.3).
+   */
+  readonly build: BuildState;
   /** Strikes that have been committed but have not landed yet. */
   readonly pending: readonly PendingStrike[];
   readonly actors: readonly Actor[];
