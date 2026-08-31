@@ -1,5 +1,6 @@
 import type { CombatSetup } from '../sim/combat.ts';
 import type { CombatEvent } from '../sim/events.ts';
+import type { CombatRules } from '../sim/rules.ts';
 import type { NodeId } from '../sim/ids.ts';
 import { enemyLevel, THREAT_PER_NODE } from '../sim/level.ts';
 import {
@@ -15,6 +16,7 @@ import {
   encounterSetupFor,
   NORMAL_BASE_XP,
   shiftForDepth,
+  startRun,
   type RunState,
 } from './RunState.ts';
 
@@ -44,12 +46,32 @@ export type RunIntent =
   | { readonly kind: 'enterNode'; readonly node: NodeId }
   | { readonly kind: 'finishEncounter'; readonly result: EncounterOutcome }
   | { readonly kind: 'rest' }
-  | { readonly kind: 'leaveNode' };
+  | { readonly kind: 'leaveNode' }
+  /** GDD §13: "Retry this seed." Free, and no reward penalty. */
+  | { readonly kind: 'retrySeed' }
+  /**
+   * The feel pass's knobs (GDD §22). Rules live in run state, so moving one is
+   * a run-level act like any other — and §22 Q1 and Q6 are still open, which is
+   * what the console is for.
+   */
+  | { readonly kind: 'retune'; readonly change: Partial<CombatRules> }
+  /**
+   * A forge act already performed (GDD §6.1, §6.2). `performForgeAction` owns
+   * the rules of socketing and crafting and returns a whole new run, so the
+   * flow's job here is only to accept it — re-deriving it would be a second
+   * place those rules live.
+   */
+  | { readonly kind: 'forge'; readonly run: RunState }
+  | { readonly kind: 'newRun'; readonly seed: number };
 
 export interface EncounterOutcome {
   readonly won: boolean;
   readonly hp: number;
   readonly events: readonly CombatEvent[];
+  /** How long the fight ran (GDD §19 asks for durations; ticks are the unit). */
+  readonly ticks: number;
+  /** HP the run carried in, before §4.1 let anything faster act. */
+  readonly hpOnEntry: number;
 }
 
 export interface RunStep {
@@ -108,6 +130,19 @@ export function advanceRun(run: RunState, intent: RunIntent): RunStep {
       return { run: rest(run), savePoint: true };
     case 'leaveNode':
       return { run: leaveNode(run), savePoint: true };
+    case 'retrySeed':
+      // §13: the same world again. This is the trust mechanism - a player has
+      // to be able to prove to themselves that the loss was a decision rather
+      // than a roll, and that is only possible if the roll can be held still.
+      return { run: startRun(run.seed), savePoint: true };
+    case 'newRun':
+      return { run: startRun(intent.seed), savePoint: true };
+    case 'retune':
+      return { run: { ...run, rules: { ...run.rules, ...intent.change } }, savePoint: false };
+    case 'forge':
+      // Socketing is permanent and crafting spends materials (§6.2), so this
+      // is a save point even though the run has not moved.
+      return { run: intent.run, savePoint: true };
   }
 }
 

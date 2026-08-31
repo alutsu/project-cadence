@@ -1,4 +1,5 @@
 import { PLAYER, PLAYER_SEED } from '../data/encounters.ts';
+import { bossFor } from '../data/bosses.ts';
 import { generateEncounter } from './generate.ts';
 import { deckAtLevel, skillTable, type SkillTable } from '../data/skills.ts';
 import {
@@ -182,13 +183,18 @@ export function depthOf(run: RunState): number {
 export function encounterSetupFor(run: RunState, node: MapNode): CombatSetup {
   const level = enemyLevel(node.depth - 1, run.threat) + node.rating;
 
-  // Drawn here, at entry, off `enemyGen` — a different stream from the one that
-  // laid the map out. §11's "composition is unknown until entered" is therefore
-  // a fact about which stream runs when, not a convention the UI honours.
-  const enemies = generateEncounter(
-    { level, elite: node.elite, omen: node.omen },
-    restoreRng({ ...run.streams.enemyGen, position: encounterDraw(run, node) }),
-  );
+  // A boss is authored, not generated (GDD §12.3): each one attacks a different
+  // assumption, which is not a thing a budget can express. Everything else is
+  // drawn here, at entry, off `enemyGen` — a different stream from the one that
+  // laid the map out, so §11's "composition is unknown until entered" is a fact
+  // about which stream runs when rather than a convention the UI honours.
+  const enemies =
+    node.kind === 'boss'
+      ? bossFor(node.depth, level)
+      : generateEncounter(
+          { level, elite: node.elite, omen: node.omen },
+          restoreRng({ ...run.streams.enemyGen, position: encounterDraw(run, node) }),
+        );
 
   return {
     actors: [{ ...PLAYER_SEED, hp: run.hp, maxHp: run.maxHp }, ...enemies],

@@ -1,0 +1,136 @@
+import Phaser from 'phaser';
+import { playtestLog, type PlaytestLog } from '../platform/playtest.ts';
+import { advanceRun, viewOf, type RunIntent, type RunView } from '../run/runFlow.ts';
+import { levelOf } from '../run/runFlow.ts';
+import { nodeRecord, runSummary } from '../run/telemetry.ts';
+import { startRun, type RunState } from '../run/RunState.ts';
+import type { CardId, NodeId } from '../sim/ids.ts';
+import type { RunSceneData } from './sceneData.ts';
+
+/**
+ * The run's owner (GDD §20.1's tree, CLAUDE.md §4.1).
+ *
+ * One `RunState` lives here and nowhere else. This scene reads `viewOf` to
+ * decide which screen the run is on, starts that scene with the view and a
+ * `dispatch`, and applies whatever comes back through `advanceRun`. It renders
+ * nothing itself.
+ *
+ * The point of the arrangement is that **the flow is a reducer** and this is
+ * only its wiring: the balance harness plays a whole run through the same
+ * `advanceRun` a click here calls, so a number it prints describes the shipping
+ * game rather than a parallel re-implementation of it.
+ */
+const SCENES: Readonly<Record<RunView['kind'], string>> = {
+  map: 'Map',
+  encounter: 'Combat',
+  sanctum: 'Sanctum',
+  market: 'Map',
+  summary: 'Summary',
+};
+
+export class RunScene extends Phaser.Scene {
+  private run: RunState;
+  private readonly playtest: PlaytestLog;
+  private readonly played = new Set<CardId>();
+  private recordedNode: NodeId | null = null;
+  private active: string | null = null;
+
+  constructor(seed: number, session: string) {
+    super('Run');
+    this.run = startRun(seed);
+    this.playtest = playtestLog(session);
+    this.playtest.record({
+      kind: 'run_started',
+      seed,
+      attunement: { ...this.run.attunement },
+    });
+  }
+
+  create(): void {
+    this.show();
+  }
+
+  /** Every card the player has played this run, for §19's "never played". */
+  noteCardPlayed(card: CardId): void {
+    this.played.add(card);
+  }
+
+  /** What a child scene calls. The child decides nothing; it reports. */
+  dispatch(intent: RunIntent): void {
+    // A market is not built yet (§9 is S5's), so entering one leaves again
+    // rather than stranding the run on a screen that does not exist.
+    const stepped = advanceRun(this.run, intent);
+    this.run = stepped.run;
+
+    if (intent.kind === 'retrySeed' || intent.kind === 'newRun') {
+      this.played.clear();
+      this.recordedNode = null;
+      this.playtest.record({
+        kind: 'run_started',
+        seed: this.run.seed,
+        attunement: { ...this.run.attunement },
+      });
+    }
+
+    this.show();
+  }
+
+  /** The run as it stands, for a child scene that needs to read it. */
+  state(): RunState {
+    return this.run;
+  }
+
+  playedCards(): ReadonlySet<CardId> {
+    return this.played;
+  }
+
+  private show(): void {
+    const view = viewOf(this.run);
+
+    if (view.kind === 'market') {
+      // [M2 STAND-IN] §9's ledger is S5's. Until it exists a Market pays
+      // nothing, so taking one is a wasted node — which is honest, and better
+      // than a screen that pretends to sell something.
+      this.dispatch({ kind: 'leaveNode' });
+      return;
+    }
+
+    this.record(view);
+
+    const next = SCENES[view.kind];
+    const data: RunSceneData = {
+      view,
+      run: this.run,
+      dispatch: (intent) => {
+        this.dispatch(intent);
+      },
+    };
+
+    // Stopped and restarted rather than swapped: a scene that keeps its board
+    // across two different encounters is a scene holding game state, and
+    // CLAUDE.md §4.1 says it may not.
+    if (this.active !== null && this.active !== next) this.scene.stop(this.active);
+    if (this.active === next) this.scene.stop(next);
+
+    this.active = next;
+    this.scene.launch(next, data);
+  }
+
+  private record(view: RunView): void {
+    if (view.kind === 'summary') {
+      this.playtest.record({
+        kind: 'run_ended',
+        summary: runSummary(this.run, view.won, this.played),
+      });
+      this.playtest.flush();
+      return;
+    }
+    if (view.kind !== 'encounter' || view.node.id === this.recordedNode) return;
+
+    this.recordedNode = view.node.id;
+    this.playtest.record({
+      kind: 'node_entered',
+      node: nodeRecord(this.run, view.node, levelOf(this.run, view.node)),
+    });
+  }
+}

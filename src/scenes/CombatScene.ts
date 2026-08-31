@@ -1,22 +1,19 @@
 import Phaser from 'phaser';
-import { PLAYER } from '../data/encounters.ts';
+import { PLAYER, PLAYER_SEED } from '../data/encounters.ts';
+import { createRng } from '../sim/rng.ts';
 import type { Action } from '../sim/actions.ts';
-import { performForgeAction, restartRun, startRun, type RunState } from '../run/RunState.ts';
-import { advanceRun, levelOf, viewOf, type RunIntent, type RunView } from '../run/runFlow.ts';
-import { encounterRecord, nodeRecord, runSummary } from '../run/telemetry.ts';
-import { playtestLog, type PlaytestLog } from '../platform/playtest.ts';
-import { DEPTH_COUNT } from '../run/map.ts';
-import { FRAMES, type Frame } from '../sim/gem.ts';
-import { ForgeScreen, type ForgeAction } from '../ui/ForgeScreen.ts';
+import type { RunState } from '../run/RunState.ts';
+import type { RunView } from '../run/runFlow.ts';
+import { runSceneData, type RunSceneData } from './sceneData.ts';
+import { DEPTH_COUNT, type MapNode } from '../run/map.ts';
 import { WeavePanel } from '../ui/WeavePanel.ts';
 
 /** Number keys, for picking a card in the forge. */
-const DIGIT_KEYS: readonly string[] = ['ONE', 'TWO', 'THREE', 'FOUR', 'FIVE', 'SIX', 'SEVEN'];
 import { isAlive } from '../sim/actor.ts';
 import type { CardDefinition } from '../sim/card.ts';
-import { advanceToDecision, reduce, startCombat } from '../sim/combat.ts';
+import { advanceToDecision, reduce, startCombat, type CombatSetup } from '../sim/combat.ts';
 import { previewAction } from '../sim/forecast.ts';
-import { cardId, type ActorId, type CardId, type NodeId } from '../sim/ids.ts';
+import { cardId, type ActorId, type CardId } from '../sim/ids.ts';
 import { ULTIMATE_RULES, type CombatRules } from '../sim/rules.ts';
 import { tick } from '../sim/tick.ts';
 import { hasPlayableCard } from '../sim/piles.ts';
@@ -50,7 +47,6 @@ interface CombatViews {
   readonly banner: EncounterBanner;
   readonly tuning: TuningPanel;
   readonly weave: WeavePanel;
-  readonly forge: ForgeScreen;
   readonly death: DeathScreen;
   readonly fx: CombatFx;
 }
@@ -64,11 +60,11 @@ interface CombatViews {
  */
 export class CombatScene extends Phaser.Scene {
   /**
-   * Everything that outlives this fight (GDD §5, §7). The scene holds a
-   * reference and never a copy — it reads the run and hands it back, so no game
-   * number lives on a Phaser object (CLAUDE.md §4.1).
+   * What `RunScene` handed over: the encounter to fight, the run it belongs to,
+   * and the one way to report back. This scene owns no run and advances
+   * nothing — it plays a fight and says how it went (CLAUDE.md §4.1).
    */
-  private run: RunState = toNextEncounter(startRun(SESSION_SEED)).run;
+  private payload: RunSceneData | null = null;
   private animations = true;
   private readonly session = new SessionLog();
   /**
@@ -76,22 +72,13 @@ export class CombatScene extends Phaser.Scene {
    * (GDD §7.3) rather than tracked alongside the fight (CLAUDE.md §2.2).
    */
   private encounterEvents: CombatEvent[] = [];
-  /** GDD §19's playtest telemetry. Dev-only; a built bundle records nothing. */
-  private readonly playtest: PlaytestLog = playtestLog(SESSION_NAME);
-  /** Every card played this run, for §19's "cards never played". */
-  private readonly played = new Set<CardId>();
-  /** The node already written to the log, so it is not written once a fight. */
-  private recordedNode: NodeId | null = null;
-  /** What the forge's next act applies to. Presentation state, not game state. */
-  private forgeCard: CardId | null = null;
-  private frameIndex = 0;
   private readonly sfx = new Sfx();
-  private opening: Opening = openingState(this.run);
-  private state: CombatState = this.opening.state;
+  private opening: Opening = EMPTY_OPENING;
+  private state: CombatState = EMPTY_OPENING.state;
   /** The board the current fight opened on, for its duration and HP delta. */
   private openedOn: CombatState = this.state;
   /** HP the run carried in, before §4.1 let anything faster act. */
-  private enteredOn: number = this.run.hp;
+  private enteredOn = 0;
   private target: ActorId | null = null;
   private views: CombatViews | null = null;
   private autoGuard: Phaser.Time.TimerEvent | null = null;
@@ -133,10 +120,42 @@ export class CombatScene extends Phaser.Scene {
     super('Combat');
   }
 
+  /** The run this fight belongs to. Read, never written (CLAUDE.md §4.1). */
+  private run(): RunState {
+    const payload = this.payload;
+    if (payload === null) throw new Error('CombatScene has no run');
+    return payload.run;
+  }
+
+  /** The encounter this scene was started on, or a loud failure (§5.4). */
+  private encounter(): Extract<RunView, { kind: 'encounter' }> {
+    const view = this.payload?.view;
+    if (view?.kind !== 'encounter') {
+      throw new Error('CombatScene was started on something that is not a fight');
+    }
+    return view;
+  }
+
+  private node(): MapNode {
+    return this.encounter().node;
+  }
+
+  private setup(): CombatSetup {
+    return this.encounter().setup;
+  }
+
+  init(data: unknown): void {
+    this.payload = runSceneData(data, 'CombatScene');
+    this.opening = openingFrom(this.setup());
+    this.state = this.opening.state;
+    this.openedOn = this.state;
+    this.enteredOn = this.run().hp;
+    this.encounterEvents = [...this.opening.events];
+  }
+
   create(): void {
     this.cameras.main.setBackgroundColor(COLORS.background);
     this.target = firstLivingEnemy(this.state);
-    this.openPlaytest();
 
     this.views = {
       queue: new QueueStrip(this),
@@ -169,15 +188,6 @@ export class CombatScene extends Phaser.Scene {
       banner: new EncounterBanner(this),
       tuning: new TuningPanel(this),
       weave: new WeavePanel(this),
-      forge: new ForgeScreen({
-        scene: this,
-        onAct: (action) => {
-          this.forgeAct(action);
-        },
-        onClose: () => {
-          this.views?.forge.toggle(this.run);
-        },
-      }),
       // Transient hits sit above the board and below the death screen.
       fx: new CombatFx(this),
       // Built last so it draws over everything it covers.
@@ -262,43 +272,27 @@ export class CombatScene extends Phaser.Scene {
    * sends you back to the first, whole. The chain boundary restores HP — see
    * CHAIN_SIZE in the encounter data for why M0 needs one at all.
    */
+  /**
+   * The fight is over, so say so and stand aside. `RunScene` decides what
+   * follows — whether that is the next fight in this node, the map, or §13's
+   * summary. This scene does not know and must not.
+   */
   private advanceEncounter(): void {
     if (this.state.outcome === 'ongoing') return;
 
-    if (this.state.outcome === 'lost') {
-      this.recordEncounter();
-      this.playtest.record({
-        kind: 'run_ended',
-        summary: runSummary(this.run, false, this.played),
-      });
-      this.playtest.flush();
-      this.played.clear();
+    const payload = this.payload;
+    if (payload === null) return;
 
-      // Nothing carries between runs (GDD §9) — including the Attunement, so
-      // the next attempt is a different world as well as a fresh one.
-      //
-      // Walked to the next fight, not merely restarted: a fresh run stands on
-      // the map, and `restart` below needs one standing in an encounter. Dying
-      // without this threw, left the board in its dead state, and turned every
-      // further click into another recorded run end.
-      this.run = toNextEncounter(restartRun(this.run)).run;
-      // The death screen has been read by now; the next attempt counts fresh.
-      this.session.reset();
-      this.restart();
-      return;
-    }
-
-    this.recordEncounter();
-    const finished = advanceRun(this.run, {
+    payload.dispatch({
       kind: 'finishEncounter',
       result: {
-        won: true,
-        hp: findActor(this.state, PLAYER)?.hp ?? this.run.hp,
+        won: this.state.outcome === 'won',
+        hp: findActor(this.state, PLAYER)?.hp ?? this.run().hp,
         events: this.encounterEvents,
+        ticks: this.state.now - this.openedOn.now,
+        hpOnEntry: this.enteredOn,
       },
     });
-    this.run = toNextEncounter(finished.run).run;
-    this.restart();
   }
 
   /**
@@ -319,29 +313,24 @@ export class CombatScene extends Phaser.Scene {
       this.views?.weave.toggle();
       this.renderAll();
     });
-    keys.on('keydown-F', () => {
-      this.views?.forge.toggle(this.run);
-      this.renderAll();
-    });
-    this.installForgeKeys(keys);
     keys.on('keydown-U', () => {
       this.cycleUltimateRule();
     });
     keys.on('keydown-G', () => {
-      this.retune({ guardCap: Math.max(5, this.run.rules.guardCap - 5) });
+      this.retune({ guardCap: Math.max(5, this.run().rules.guardCap - 5) });
     });
     keys.on('keydown-H', () => {
-      this.retune({ guardCap: this.run.rules.guardCap + 5 });
+      this.retune({ guardCap: this.run().rules.guardCap + 5 });
     });
     keys.on('keydown-J', () => {
-      this.retune({ guardDecayEvery: Math.max(0, this.run.rules.guardDecayEvery - 1) });
+      this.retune({ guardDecayEvery: Math.max(0, this.run().rules.guardDecayEvery - 1) });
     });
     keys.on('keydown-K', () => {
-      this.retune({ guardDecayEvery: this.run.rules.guardDecayEvery + 1 });
+      this.retune({ guardDecayEvery: this.run().rules.guardDecayEvery + 1 });
     });
     keys.on('keydown-W', () => {
       this.retune({
-        guardWeight: tick(this.run.rules.guardWeight >= 6 ? 2 : this.run.rules.guardWeight + 1),
+        guardWeight: tick(this.run().rules.guardWeight >= 6 ? 2 : this.run().rules.guardWeight + 1),
       });
     });
     keys.on('keydown-A', () => {
@@ -356,141 +345,35 @@ export class CombatScene extends Phaser.Scene {
       this.restart();
     });
     keys.on('keydown-N', () => {
-      // A debug jump, not a cleared fight: enter the next encounter whole, so
-      // it can be read on its own terms.
-      // A debug jump: leave the node whole and take the next thing offered.
-      this.run = toNextEncounter(
-        advanceRun({ ...this.run, hp: this.run.maxHp }, { kind: 'leaveNode' }).run,
-      ).run;
-      this.restart();
+      // A debug jump: leave this node and go back to the map.
+      this.payload?.dispatch({ kind: 'leaveNode' });
     });
-  }
-
-  /**
-   * The forge's own keys, live only while it is open — the build is made away
-   * from the fight (P5), so its controls do not compete with the fight's.
-   */
-  private installForgeKeys(keys: Phaser.Input.Keyboard.KeyboardPlugin): void {
-    const act = (kind: ForgeAction['kind'], frame: Frame | null = null): void => {
-      const forge = this.views?.forge;
-      if (!forge?.isOpen()) return;
-      forge.act({ kind, card: this.forgeCard, frame, tier: 1 }, this.run);
-      this.renderAll();
-    };
-
-    keys.on('keydown-C', () => {
-      act('craft', FRAMES[this.frameIndex] ?? 'REPEAT');
-    });
-    keys.on('keydown-S', () => {
-      act('socket');
-    });
-    keys.on('keydown-E', () => {
-      act('seat');
-    });
-    keys.on('keydown-X', () => {
-      act('unseat');
-    });
-    keys.on('keydown-R', () => {
-      if (this.views?.forge.isOpen() === true) act('reroll');
-    });
-
-    for (const [index] of FRAMES.entries()) {
-      keys.on(`keydown-${DIGIT_KEYS[index] ?? ''}`, () => {
-        this.pickForgeTarget(index);
-      });
-    }
-  }
-
-  /** Which deck card and which frame the forge's next act applies to. */
-  private pickForgeTarget(index: number): void {
-    if (this.views?.forge.isOpen() !== true) return;
-    const distinct = [...new Set(this.run.deck)];
-    this.forgeCard = distinct[index] ?? this.forgeCard;
-    this.frameIndex = index % FRAMES.length;
-    this.renderAll();
-  }
-
-  /** The run performs the act; the screen only asked for it (CLAUDE.md §4.1). */
-  private forgeAct(action: ForgeAction): void {
-    const performed = performForgeAction(this.run, action);
-    if (performed !== null) this.run = performed;
-    this.renderAll();
   }
 
   private cycleUltimateRule(): void {
-    const at = ULTIMATE_RULES.indexOf(this.run.rules.ultimate);
+    const at = ULTIMATE_RULES.indexOf(this.run().rules.ultimate);
     this.retune({ ultimate: ULTIMATE_RULES[(at + 1) % ULTIMATE_RULES.length] ?? 'immediate' });
   }
 
+  /**
+   * A knob moved (GDD §22). The scene asks; `RunScene` owns the rules and the
+   * run, and the change restarts this encounter because a half-retuned fight
+   * would not be a fair reading of anything.
+   */
   private retune(change: Partial<CombatRules>): void {
-    this.run = { ...this.run, rules: { ...this.run.rules, ...change } };
+    this.payload?.dispatch({ kind: 'retune', change });
     this.restart();
-  }
-
-  /**
-   * Opens the session log (GDD §19). The first node is recorded here rather
-   * than in `restart`, because the opening encounter is the one the scene is
-   * constructed into — it never goes through a restart.
-   */
-  private openPlaytest(): void {
-    this.playtest.record({
-      kind: 'run_started',
-      seed: SESSION_SEED,
-      attunement: { ...this.run.attunement },
-    });
-    this.recordNode();
-  }
-
-  /**
-   * The node, recorded once when it is entered rather than once per fight
-   * inside it. A Dungeon holds three or four encounters (§11), and logging a
-   * header for each made one node read as three identical nodes — which is
-   * exactly the kind of thing that sends you looking for a generator bug that
-   * is not there.
-   */
-  private recordNode(): void {
-    const view = viewOf(this.run);
-    if (view.kind !== 'encounter' || view.node.id === this.recordedNode) return;
-
-    this.recordedNode = view.node.id;
-    this.playtest.record({
-      kind: 'node_entered',
-      node: nodeRecord(this.run, view.node, levelOf(this.run, view.node)),
-    });
-  }
-
-  /**
-   * One fight, recorded off its own log (GDD §19). Called before the run
-   * advances, so the node and HP it names are the ones that were fought.
-   */
-  private recordEncounter(): void {
-    const view = viewOf(this.run);
-    if (view.kind !== 'encounter') return;
-
-    this.playtest.record({
-      kind: 'encounter_ended',
-      encounter: encounterRecord({
-        run: this.run,
-        node: view.node,
-        hpOnEntry: this.enteredOn,
-        before: this.openedOn,
-        after: this.state,
-        events: this.encounterEvents,
-        player: PLAYER,
-      }),
-    });
   }
 
   private restart(): void {
     this.playback.cancel();
     this.actedOnThisPress = false;
     this.dismissArmed = false;
-    this.opening = openingState(this.run);
+    this.opening = openingFrom(this.setup());
     this.encounterEvents = [...this.opening.events];
     this.openedOn = this.opening.state;
-    this.enteredOn = this.run.hp;
+    this.enteredOn = this.run().hp;
 
-    this.recordNode();
     this.state = this.opening.state;
     this.target = firstLivingEnemy(this.state);
     // GDD §4.1 lets a faster enemy act before the player ever sees the board.
@@ -541,7 +424,6 @@ export class CombatScene extends Phaser.Scene {
     this.state = played.settled;
     this.session.record(played.events, PLAYER);
     this.encounterEvents.push(...played.events);
-    if (action.kind === 'play') this.played.add(action.card);
     if (wasOngoing && this.state.outcome !== 'ongoing') {
       this.session.encounterFinished();
       this.dismissArmed = false;
@@ -701,15 +583,14 @@ export class CombatScene extends Phaser.Scene {
     views.piles.render(this.state);
     views.banner.render(
       this.nodeLabel(),
-      `${this.depthLabel()}   ·   seed ${String(SESSION_SEED)}`,
+      `${this.depthLabel()}   ·   seed ${String(this.run().seed)}`,
       this.state.outcome === 'won' ? this.endOfEncounterSummary() : '',
     );
-    views.tuning.render(this.run.rules, {
+    views.tuning.render(this.run().rules, {
       animations: this.animations,
       sound: !this.sfx.isMuted(),
     });
     views.weave.render(this.state, this.currentTarget());
-    views.forge.render(this.run);
     if (this.state.outcome === 'lost') views.death.show(this.deathReport());
     else views.death.hide();
     this.armAutoGuard();
@@ -742,13 +623,12 @@ export class CombatScene extends Phaser.Scene {
    * The Omen is the only thing a Dungeon shows in advance, so it belongs where
    * the player is already looking.
    */
+  /** Which node this is, and what it advertised before it was entered (§11). */
   private nodeLabel(): string {
-    const view = viewOf(this.run);
-    if (view.kind !== 'encounter') return 'the road';
-
-    const omen = view.node.omen;
+    const node = this.node();
+    const omen = node.omen;
     const hint = omen === null ? '' : `  ·  omen: ${omen.kind} ${omen.tag}`;
-    return `${view.node.elite ? 'elite ' : ''}${view.node.kind}${hint}`;
+    return `${node.elite ? 'elite ' : ''}${node.kind}${hint}`;
   }
 
   /**
@@ -756,13 +636,17 @@ export class CombatScene extends Phaser.Scene {
    * there is to go. The label names the Depth, the fight within the node, and
    * the Threat the route has built up (§5.3).
    */
+  /**
+   * P3/P5: the wound carrying is only a real cost if the player can see how far
+   * there is to go. The label names the Depth, the fight within the node, and
+   * the Threat the route has built up (§5.3).
+   */
   private depthLabel(): string {
-    const view = viewOf(this.run);
-    const fight = this.run.position.indexInNode + 1;
-    const of = view.kind === 'encounter' ? view.node.encounters : 1;
+    const run = this.run();
+    const fight = run.position.indexInNode + 1;
     return (
-      `depth ${String(this.run.position.depth)}/${String(DEPTH_COUNT)}` +
-      `  ·  fight ${String(fight)}/${String(of)}  ·  threat ${String(this.run.threat)}`
+      `depth ${String(run.position.depth)}/${String(DEPTH_COUNT)}` +
+      `  ·  fight ${String(fight)}/${String(this.node().encounters)}  ·  threat ${String(run.threat)}`
     );
   }
 
@@ -792,7 +676,7 @@ export class CombatScene extends Phaser.Scene {
 
     return {
       cause: this.causeOfDeath(),
-      reached: `fell at depth ${String(this.run.position.depth)} of ${String(DEPTH_COUNT)}, on threat ${String(this.run.threat)}`,
+      reached: `fell at depth ${String(this.run().position.depth)} of ${String(DEPTH_COUNT)}, on threat ${String(this.run().threat)}`,
       played:
         `${String(totals.cardsPlayed)} cards · ${String(totals.waits)} waits · ` +
         `${String(totals.staggers)} staggers · ${String(totals.damageTaken)} damage taken`,
@@ -800,7 +684,7 @@ export class CombatScene extends Phaser.Scene {
         totals.neverPlayed.length === 0
           ? 'you played every card in the deck'
           : `never played: ${totals.neverPlayed.join(', ')}`,
-      seed: `seed ${String(SESSION_SEED)}`,
+      seed: `seed ${String(this.run().seed)}`,
     };
   }
 
@@ -841,7 +725,6 @@ export class CombatScene extends Phaser.Scene {
     views.banner.destroy();
     views.tuning.destroy();
     views.weave.destroy();
-    views.forge.destroy();
     this.input.removeAllListeners();
     this.input.keyboard?.removeAllListeners();
     this.autoGuard?.remove();
@@ -865,26 +748,6 @@ function outcomeWord(outcome: CombatState['outcome']): string {
   return outcome === 'won' ? 'cleared' : 'you died';
 }
 
-/**
- * The session seed. Taken from `?seed=` when present so a fight can be replayed
- * exactly — GDD §13 wants that for run summaries, and the M0 gate wants it so a
- * tester can report the hand they were looking at.
- */
-const SESSION_SEED = readSeed();
-
-/**
- * Names this playtest's log file (GDD §19). The seed is in it so a session can
- * be matched to the run it recorded, and a timestamp so two sittings on the
- * same seed do not overwrite one another.
- */
-const SESSION_NAME = `seed${String(SESSION_SEED)}-${String(Date.now())}`;
-
-function readSeed(): number {
-  const requested = new URLSearchParams(window.location.search).get('seed');
-  const parsed = requested === null ? Number.NaN : Number(requested);
-  return Number.isFinite(parsed) ? parsed : Date.now();
-}
-
 /** The state an encounter opens on, and everything that happened getting there. */
 interface Opening {
   readonly state: CombatState;
@@ -896,59 +759,26 @@ interface Opening {
  * Which cards, which Weave, which sockets, and what HP to enter on are all
  * facts about the run (CLAUDE.md §4.1: a Scene is wiring).
  */
-/**
- * The run walked forward until it is standing in a fight.
- *
- * [M2 STAND-IN] §11's map has a screen of its own in S6; until then the scene
- * takes the first node on offer and rests when a Sanctum comes up, so the flow
- * underneath is the real one even though the choice is not yet the player's.
- */
-function toNextEncounter(run: RunState): { readonly run: RunState; readonly view: RunView } {
-  let current = run;
 
-  for (let step = 0; step < FLOW_STEPS; step += 1) {
-    const view = viewOf(current);
-    if (view.kind === 'encounter' || view.kind === 'summary') return { run: current, view };
-
-    const intent = intentFrom(view, current);
-    if (intent === null) return { run: current, view };
-    current = advanceRun(current, intent).run;
-  }
-
-  return { run: current, view: viewOf(current) };
-}
-
-/** A guard against a flow that cannot reach a fight; a run is ~20 nodes. */
-const FLOW_STEPS = 200;
-
-/**
- * What the stand-in does at each non-combat view, or null if it is stuck.
- *
- * [M2 STAND-IN] It rests when badly hurt, because §11's Sanctum is the only
- * healing there is. S6 hands this choice to the player, where it belongs.
- */
-function intentFrom(view: RunView, run: RunState): RunIntent | null {
-  if (view.kind === 'sanctum') return { kind: 'rest' };
-  if (view.kind === 'market') return { kind: 'leaveNode' };
-  if (view.kind !== 'map') return null;
-
-  const hurt = run.hp < run.maxHp * REST_THRESHOLD;
-  const sanctum = view.offered.find((node) => node.kind === 'sanctum');
-  const node = hurt && sanctum !== undefined ? sanctum : view.offered[0];
-
-  return node === undefined ? null : { kind: 'enterNode', node: node.id };
-}
-
-const REST_THRESHOLD = 0.6;
-
-function openingState(run: RunState): Opening {
-  const view = viewOf(run);
-  if (view.kind !== 'encounter') throw new Error('the run is not standing in a fight');
-
-  const started = startCombat(view.setup);
+/** The board a fight opens on, and the opening exchange that got there. */
+function openingFrom(setup: CombatSetup): Opening {
+  const started = startCombat(setup);
   const opened = advanceToDecision(started.state);
   return { state: opened.state, events: [...started.events, ...opened.events] };
 }
+
+/**
+ * A placeholder board, replaced in `init` before anything reads it. Phaser
+ * constructs a scene long before it is started, so the fields cannot be
+ * initialised from scene data — and a `null` here would put an optional chain
+ * on every read of the board instead.
+ */
+const EMPTY_OPENING: Opening = openingFrom({
+  actors: [PLAYER_SEED],
+  catalogue: {},
+  deck: [],
+  rng: createRng(0, 'combat'),
+});
 
 function firstLivingEnemy(state: CombatState): ActorId | null {
   return state.actors.find((actor) => actor.side === 'enemy' && isAlive(actor))?.id ?? null;

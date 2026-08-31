@@ -81,7 +81,10 @@ function intentFor(view: RunView, events: readonly CombatEvent[]): RunIntent {
   }
   if (view.kind === 'sanctum') return { kind: 'rest' };
   if (view.kind === 'market') return { kind: 'leaveNode' };
-  return { kind: 'finishEncounter', result: { won: true, hp: 40, events } };
+  return {
+    kind: 'finishEncounter',
+    result: { won: true, hp: 40, events, ticks: 20, hpOnEntry: 70 },
+  };
 }
 
 describe('a seed means the same run twice (GDD §20.2, §13)', () => {
@@ -250,7 +253,7 @@ describe('the run carries a wound; the Sanctum is the rest (GDD §4.10, §11)', 
     run = advanceRun(run, { kind: 'enterNode', node: dungeon.id }).run;
     const dead = advanceRun(run, {
       kind: 'finishEncounter',
-      result: { won: false, hp: 0, events: [] },
+      result: { won: false, hp: 0, events: [], ticks: 20, hpOnEntry: 70 },
     }).run;
 
     expect(viewOf(dead)).toEqual({ kind: 'summary', won: false });

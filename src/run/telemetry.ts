@@ -2,7 +2,6 @@ import type { CombatEvent } from '../sim/events.ts';
 import type { ActorId, CardId } from '../sim/ids.ts';
 import { attributeDamage, dominantTag } from '../sim/saturation.ts';
 import type { Tag } from '../sim/tag.ts';
-import type { CombatState } from '../sim/state.ts';
 import type { MapNode } from './map.ts';
 import { maxHpFloor, type RunState } from './RunState.ts';
 
@@ -122,14 +121,17 @@ export function nodeRecord(run: RunState, node: MapNode, level: number): NodeRec
 }
 
 interface EncounterInput {
-  readonly run: RunState;
+  readonly node: MapNode;
   /** HP the run entered on, which is not the HP the first turn opens on. */
   readonly hpOnEntry: number;
-  readonly node: MapNode;
-  readonly before: CombatState;
-  readonly after: CombatState;
+  readonly hpAfter: number;
+  readonly won: boolean;
+  /** §19 asks for encounter durations; ticks are the unit the game runs on. */
+  readonly ticks: number;
   readonly events: readonly CombatEvent[];
   readonly player: ActorId;
+  /** Names an actor for the death cause, since the log carries only ids. */
+  readonly nameOf: (actor: ActorId) => string;
 }
 
 /** One fight, read entirely off its own log (CLAUDE.md §2.2). */
@@ -153,7 +155,7 @@ export function encounterRecord(input: EncounterInput): EncounterRecord {
       guardAbsorbed += event.amount;
     else if (event.kind === 'damage_dealt' && event.target === player) {
       damageTaken += event.amount;
-      lastHarm = nameOf(input.after, event.source);
+      lastHarm = input.nameOf(event.source);
     } else if (event.kind === 'status_proc' && event.actor === player) {
       damageTaken += event.amount;
       lastHarm = event.status;
@@ -165,12 +167,12 @@ export function encounterRecord(input: EncounterInput): EncounterRecord {
   return {
     depth: input.node.depth,
     node: input.node.id,
-    won: input.after.outcome === 'won',
-    ticks: input.after.now - input.before.now,
+    won: input.won,
+    ticks: input.ticks,
     decisions,
     hpBefore: input.hpOnEntry,
-    hpAfter: hpOf(input.after, player),
-    enemies: input.before.actors.filter((a) => a.side === 'enemy').map((a) => a.name),
+    hpAfter: input.hpAfter,
+    enemies: enemiesIn(events, input.nameOf),
     cardsPlayed,
     damageByTag: { ...byTag },
     dominantTag: dominantTag(byTag),
@@ -181,12 +183,25 @@ export function encounterRecord(input: EncounterInput): EncounterRecord {
   };
 }
 
-function hpOf(state: CombatState, player: ActorId): number {
-  return state.actors.find((actor) => actor.id === player)?.hp ?? 0;
-}
-
-function nameOf(state: CombatState, actor: ActorId): string {
-  return state.actors.find((entry) => entry.id === actor)?.name ?? String(actor);
+/**
+ * Who was in the fight, read off the log rather than off a board snapshot.
+ *
+ * Anything that was scheduled at the start acted or was acted upon, so the log
+ * names every participant — which means this module needs no `CombatState` at
+ * all, and the record can be built by whoever owns the run rather than only by
+ * whoever owns the board.
+ */
+function enemiesIn(
+  events: readonly CombatEvent[],
+  nameOf: (actor: ActorId) => string,
+): readonly string[] {
+  const seen = new Set<string>();
+  for (const event of events) {
+    if (event.kind !== 'actor_scheduled') continue;
+    const name = nameOf(event.actor);
+    if (name !== 'Adventurer') seen.add(name);
+  }
+  return [...seen];
 }
 
 /** §13's run summary, and §19's "cards never played". */

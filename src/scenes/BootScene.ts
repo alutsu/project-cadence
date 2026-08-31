@@ -19,6 +19,6 @@ export class BootScene extends Phaser.Scene {
   create(): void {
     const { width, height } = this.scale;
     this.add.text(width / 2, height / 2, TITLE_TEXT, TITLE_STYLE).setOrigin(0.5, 0.5);
-    this.scene.start('Combat');
+    this.scene.start('Run');
   }
 }

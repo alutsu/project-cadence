@@ -69,6 +69,16 @@ export const LAYOUT = {
   /** The forge is a screen of its own, not a panel: the build is made away
    * from where it is used, so the combat screen keeps its budget (P5). */
   forge: { top: 150, rowHeight: 56, width: 1180 },
+  /** The map screen (GDD §11): four node cards in a row, and what you carry. */
+  map: {
+    headingY: 200,
+    purseY: 300,
+    centreY: 620,
+    cardWidth: 340,
+    cardHeight: 400,
+    gap: 40,
+    lineHeight: 42,
+  },
   hud: { margin: 48 },
 } as const;
 

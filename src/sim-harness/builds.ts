@@ -119,6 +119,7 @@ interface FightResult {
   readonly outcome: 'won' | 'lost' | 'ongoing';
   readonly hp: number;
   readonly events: readonly CombatEvent[];
+  readonly ticks: number;
 }
 
 /** One encounter, played to its end by a policy. */
@@ -141,6 +142,7 @@ function fightOne(setup: CombatSetup, run: RunState, policy: Policy): FightResul
     outcome: state.outcome,
     hp: state.actors.find((actor) => actor.side === 'player')?.hp ?? run.hp,
     events,
+    ticks: state.now - opening.state.now,
   };
 }
 
@@ -180,7 +182,13 @@ export function playRun(spec: {
 
     run = advanceRun(run, {
       kind: 'finishEncounter',
-      result: { won, hp: fought.hp, events: fought.events },
+      result: {
+        won,
+        hp: fought.hp,
+        events: fought.events,
+        ticks: fought.ticks,
+        hpOnEntry: run.hp,
+      },
     }).run;
   }
 
