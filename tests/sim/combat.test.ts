@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { Action } from '../../src/sim/actions.ts';
-import { advanceToDecision, reduce, startCombat, type CombatStep } from '../../src/sim/combat.ts';
+import { advanceToDecision, reduce, startCombat } from '../../src/sim/combat.ts';
 import type { CombatEvent } from '../../src/sim/events.ts';
 import type { ActorId } from '../../src/sim/ids.ts';
 import { cardId } from '../../src/sim/ids.ts';
-import { findActor, type CombatState } from '../../src/sim/state.ts';
+import { findActor, type CombatState, type CombatStep } from '../../src/sim/state.ts';
 import { m0Catalogue } from '../../src/data/cards.ts';
 import { HEAVY, LIGHT, PLAYER, RAT, scenario } from '../../src/sim-harness/scenario.ts';
 

@@ -1,11 +1,24 @@
 import { isAlive, type Actor } from './actor.ts';
 import type { CardCatalogue, CardTargeting } from './card.ts';
+import type { CombatEvent } from './events.ts';
 import type { CombatRules } from './rules.ts';
 import type { ActorId, CardId } from './ids.ts';
 import type { Tick } from './tick.ts';
 import type { WeaveSnapshot } from './weave.ts';
 
 export type CombatOutcome = 'ongoing' | 'won' | 'lost';
+
+/**
+ * A state and the log of how it got there — what every step of the sim returns.
+ *
+ * The reducer, the tick-scheduled effects and the pile transitions all produce
+ * exactly this, and used to each declare their own name for it. Three identical
+ * shapes is where CLAUDE.md §5.5 says the abstraction has been earned.
+ */
+export interface CombatStep {
+  readonly state: CombatState;
+  readonly events: readonly CombatEvent[];
+}
 
 /** A played card, waiting out its Recovery (GDD §4.9). */
 export interface CooldownEntry {

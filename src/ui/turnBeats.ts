@@ -1,4 +1,5 @@
-import { advanceOneTurn, type CombatStep } from '../sim/combat.ts';
+import { advanceOneTurn } from '../sim/combat.ts';
+import type { CombatStep } from '../sim/state.ts';
 import type { CombatEvent } from '../sim/events.ts';
 import type { CombatState } from '../sim/state.ts';
 

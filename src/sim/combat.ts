@@ -26,6 +26,7 @@ import {
   withActor,
   type CombatOutcome,
   type CombatState,
+  type CombatStep,
   type PendingStrike,
 } from './state.ts';
 import { POISON_INTERVAL, damageScale, isPeriodic, magnitudeOf, type Status } from './status.ts';
@@ -38,11 +39,6 @@ import { NEUTRAL_WEAVE, NO_RESISTANCE, type ResistanceTable, type WeaveSnapshot 
  * `reduce` commits what an actor chose, `advanceToDecision` resolves the ticks
  * between one player decision and the next.
  */
-export interface CombatStep {
-  readonly state: CombatState;
-  readonly events: readonly CombatEvent[];
-}
-
 export type ReduceResult =
   | { readonly ok: true; readonly step: CombatStep }
   | { readonly ok: false; readonly error: IllegalAction };

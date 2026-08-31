@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { m0Catalogue, m0Deck } from '../../src/data/cards.ts';
 import { soloRat } from '../../src/data/encounters.ts';
 import type { Action } from '../../src/sim/actions.ts';
-import { advanceToDecision, reduce, startCombat, type CombatStep } from '../../src/sim/combat.ts';
+import { advanceToDecision, reduce, startCombat } from '../../src/sim/combat.ts';
+import type { CombatStep } from '../../src/sim/state.ts';
 import { cardId, type CardId } from '../../src/sim/ids.ts';
 import {
   HAND_CAP,

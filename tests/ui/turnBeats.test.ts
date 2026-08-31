@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Action } from '../../src/sim/actions.ts';
-import { advanceToDecision, reduce, startCombat, type CombatStep } from '../../src/sim/combat.ts';
+import { advanceToDecision, reduce, startCombat } from '../../src/sim/combat.ts';
+import type { CombatStep } from '../../src/sim/state.ts';
 import type { CombatState } from '../../src/sim/state.ts';
 import { beatsOf } from '../../src/ui/turnBeats.ts';
 import { HEAVY, LIGHT, PLAYER, RAT, scenario } from '../../src/sim-harness/scenario.ts';

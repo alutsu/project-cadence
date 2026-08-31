@@ -4,7 +4,7 @@ import { absorb, decayGuard } from './guard.ts';
 import { breaksPoise, stagger } from './poise.ts';
 import type { ActorId } from './ids.ts';
 import { returnDueCards } from './piles.ts';
-import type { CombatState, PendingStrike } from './state.ts';
+import type { CombatState, CombatStep, PendingStrike } from './state.ts';
 import { withActor } from './state.ts';
 import { strikeTargets } from './targeting.ts';
 import {
@@ -16,17 +16,12 @@ import {
 } from './status.ts';
 import { addTicks, tick, type Tick } from './tick.ts';
 
-export interface EffectStep {
-  readonly state: CombatState;
-  readonly events: readonly CombatEvent[];
-}
-
 /**
  * Tick-scheduled resolution (GDD §4.5). Damage over time, expiries and Cooldown
  * returns resolve on the timeline, not inside an actor's turn — so a slow actor
  * is never punished twice by the same Poison.
  */
-export function advanceTime(state: CombatState, to: Tick): EffectStep {
+export function advanceTime(state: CombatState, to: Tick): CombatStep {
   const events: CombatEvent[] = [];
   let current = state;
 
@@ -77,7 +72,7 @@ function statusTicks(status: Status): Tick[] {
  * damage over time, then expiries. The order is arbitrary but it must be
  * *stable*, or two identical states could diverge.
  */
-function resolveAt(state: CombatState, at: Tick): EffectStep {
+function resolveAt(state: CombatState, at: Tick): CombatStep {
   const returned = returnDueCards(state, at);
   const landed = landPendingStrikes(returned.state, at);
   const procs = resolveProcs(landed.state, at);
@@ -90,7 +85,7 @@ function resolveAt(state: CombatState, at: Tick): EffectStep {
 }
 
 /** Ultimates in flight under the wind-up rule (GDD §22 Q1) arriving. */
-function landPendingStrikes(state: CombatState, at: Tick): EffectStep {
+function landPendingStrikes(state: CombatState, at: Tick): CombatStep {
   const due = state.pending.filter((strike) => strike.landsAt <= at);
   if (due.length === 0) return { state, events: [] };
 
@@ -111,7 +106,7 @@ function landPendingStrikes(state: CombatState, at: Tick): EffectStep {
  * for an AoE, that is the line as it is at impact, not as it was when the card
  * was committed (GDD §4.8, §22 Q1).
  */
-function landStrike(state: CombatState, strike: PendingStrike, at: Tick): EffectStep {
+function landStrike(state: CombatState, strike: PendingStrike, at: Tick): CombatStep {
   const events: CombatEvent[] = [];
   let current = state;
 
@@ -130,7 +125,7 @@ interface LandingOrder {
   readonly at: Tick;
 }
 
-function strikeOne(state: CombatState, order: LandingOrder): EffectStep {
+function strikeOne(state: CombatState, order: LandingOrder): CombatStep {
   const { strike, target: targetId, at } = order;
   const target = state.actors.find((actor) => actor.id === targetId);
   if (target === undefined || !isAlive(target)) return { state, events: [] };
@@ -151,7 +146,7 @@ function strikeOne(state: CombatState, order: LandingOrder): EffectStep {
   return { state: withActor(state, shaken?.actor ?? wounded), events };
 }
 
-function resolveProcs(state: CombatState, at: Tick): EffectStep {
+function resolveProcs(state: CombatState, at: Tick): CombatStep {
   const events: CombatEvent[] = [];
   let current = state;
 
@@ -164,7 +159,7 @@ function resolveProcs(state: CombatState, at: Tick): EffectStep {
   return { state: current, events };
 }
 
-function procActor(state: CombatState, id: Actor['id'], at: Tick): EffectStep {
+function procActor(state: CombatState, id: Actor['id'], at: Tick): CombatStep {
   const actor = state.actors.find((candidate) => candidate.id === id);
   if (actor === undefined || !isAlive(actor)) return { state, events: [] };
 
@@ -214,7 +209,7 @@ function isLive(status: Status): boolean {
   return !isPeriodic(status.kind) || status.magnitude > 0;
 }
 
-function resolveExpiries(state: CombatState, at: Tick): EffectStep {
+function resolveExpiries(state: CombatState, at: Tick): CombatStep {
   const events: CombatEvent[] = [];
 
   const actors = state.actors.map((actor) => {

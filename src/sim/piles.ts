@@ -1,9 +1,8 @@
 import type { CardCatalogue } from './card.ts';
 import { findCard } from './card.ts';
-import type { CombatEvent } from './events.ts';
 import type { CardId } from './ids.ts';
 import type { Rng } from './rng.ts';
-import type { CombatState, CooldownEntry } from './state.ts';
+import type { CombatState, CombatStep, CooldownEntry } from './state.ts';
 import { addTicks, type Tick } from './tick.ts';
 
 /** GDD §4.1: the hand holds six cards. */
@@ -16,11 +15,6 @@ export const HAND_CAP = 6;
  * real draw rather than one skipped against a full hand (D4).
  */
 export const OPENING_HAND = 5;
-
-export interface PileStep {
-  readonly state: CombatState;
-  readonly events: readonly CombatEvent[];
-}
 
 /** Fisher-Yates over an injected stream — never Math.random (GDD §20.2). */
 export function shuffle(cards: readonly CardId[], rng: Rng): readonly CardId[] {
@@ -44,7 +38,7 @@ export function shuffle(cards: readonly CardId[], rng: Rng): readonly CardId[] {
  * draws nothing at all — the wait is the cost, and the Cooldown pile is never
  * reshuffled early (§4.9).
  */
-export function drawOne(state: CombatState): PileStep {
+export function drawOne(state: CombatState): CombatStep {
   if (state.hand.length >= HAND_CAP) {
     return { state, events: [{ kind: 'draw_skipped', at: state.now, reason: 'hand_full' }] };
   }
@@ -61,7 +55,7 @@ export function drawOne(state: CombatState): PileStep {
 }
 
 /** Moves a played card out of hand and onto its Recovery clock (GDD §4.9). */
-export function sendToCooldown(state: CombatState, card: CardId): PileStep {
+export function sendToCooldown(state: CombatState, card: CardId): CombatStep {
   const definition = findCard(state.catalogue, card);
   if (definition === undefined) throw new Error(`unknown card sent to Cooldown: ${card}`);
 
@@ -80,7 +74,7 @@ export function sendToCooldown(state: CombatState, card: CardId): PileStep {
  * pile (GDD §4.9). Resolved by the scheduler between turns, in tick order, so a
  * card due exactly on your turn is back before you draw.
  */
-export function returnDueCards(state: CombatState, through: Tick): PileStep {
+export function returnDueCards(state: CombatState, through: Tick): CombatStep {
   const due = state.cooldown.filter((entry) => entry.returnTick <= through).sort(byReturnTick);
   if (due.length === 0) return { state, events: [] };
 
