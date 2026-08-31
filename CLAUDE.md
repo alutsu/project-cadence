@@ -421,7 +421,7 @@ brave --headless=new --disable-gpu --no-sandbox --enable-unsafe-swiftshader \
   --disable-background-timer-throttling --disable-backgrounding-occluded-windows \
   --disable-renderer-backgrounding \
   --enable-logging=stderr --v=0 --window-size=1280,720 \
-  --screenshot=/tmp/cadence-boot.png http://localhost:5173/
+  --screenshot=/tmp/cadence-boot.png http://localhost:8080/
 
 # For an input-driven check, add --remote-debugging-port=9222 instead of
 # --screenshot, then drive it over CDP (Input.dispatchMouseEvent for the hover
