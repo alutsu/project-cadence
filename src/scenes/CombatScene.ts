@@ -16,7 +16,7 @@ import { isAlive } from '../sim/actor.ts';
 import type { CardDefinition } from '../sim/card.ts';
 import { advanceToDecision, reduce, startCombat } from '../sim/combat.ts';
 import { previewAction } from '../sim/forecast.ts';
-import { cardId, type ActorId, type CardId } from '../sim/ids.ts';
+import { cardId, type ActorId, type CardId, type NodeId } from '../sim/ids.ts';
 import { ULTIMATE_RULES, type CombatRules } from '../sim/rules.ts';
 import { tick } from '../sim/tick.ts';
 import { hasPlayableCard } from '../sim/piles.ts';
@@ -80,6 +80,8 @@ export class CombatScene extends Phaser.Scene {
   private readonly playtest: PlaytestLog = playtestLog(SESSION_NAME);
   /** Every card played this run, for §19's "cards never played". */
   private readonly played = new Set<CardId>();
+  /** The node already written to the log, so it is not written once a fight. */
+  private recordedNode: NodeId | null = null;
   /** What the forge's next act applies to. Presentation state, not game state. */
   private forgeCard: CardId | null = null;
   private frameIndex = 0;
@@ -88,6 +90,8 @@ export class CombatScene extends Phaser.Scene {
   private state: CombatState = this.opening.state;
   /** The board the current fight opened on, for its duration and HP delta. */
   private openedOn: CombatState = this.state;
+  /** HP the run carried in, before §4.1 let anything faster act. */
+  private enteredOn: number = this.run.hp;
   private target: ActorId | null = null;
   private views: CombatViews | null = null;
   private autoWait: Phaser.Time.TimerEvent | null = null;
@@ -272,7 +276,12 @@ export class CombatScene extends Phaser.Scene {
 
       // Nothing carries between runs (GDD §9) — including the Attunement, so
       // the next attempt is a different world as well as a fresh one.
-      this.run = restartRun(this.run);
+      //
+      // Walked to the next fight, not merely restarted: a fresh run stands on
+      // the map, and `restart` below needs one standing in an encounter. Dying
+      // without this threw, left the board in its dead state, and turned every
+      // further click into another recorded run end.
+      this.run = toNextEncounter(restartRun(this.run)).run;
       // The death screen has been read by now; the next attempt counts fresh.
       this.session.reset();
       this.restart();
@@ -432,10 +441,18 @@ export class CombatScene extends Phaser.Scene {
     this.recordNode();
   }
 
+  /**
+   * The node, recorded once when it is entered rather than once per fight
+   * inside it. A Dungeon holds three or four encounters (§11), and logging a
+   * header for each made one node read as three identical nodes — which is
+   * exactly the kind of thing that sends you looking for a generator bug that
+   * is not there.
+   */
   private recordNode(): void {
     const view = viewOf(this.run);
-    if (view.kind !== 'encounter') return;
+    if (view.kind !== 'encounter' || view.node.id === this.recordedNode) return;
 
+    this.recordedNode = view.node.id;
     this.playtest.record({
       kind: 'node_entered',
       node: nodeRecord(this.run, view.node, levelOf(this.run, view.node)),
@@ -455,6 +472,7 @@ export class CombatScene extends Phaser.Scene {
       encounter: encounterRecord({
         run: this.run,
         node: view.node,
+        hpOnEntry: this.enteredOn,
         before: this.openedOn,
         after: this.state,
         events: this.encounterEvents,
@@ -470,6 +488,7 @@ export class CombatScene extends Phaser.Scene {
     this.opening = openingState(this.run);
     this.encounterEvents = [...this.opening.events];
     this.openedOn = this.opening.state;
+    this.enteredOn = this.run.hp;
 
     this.recordNode();
     this.state = this.opening.state;

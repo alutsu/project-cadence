@@ -53,6 +53,12 @@ export interface EncounterRecord {
   /** §19 asks for encounter durations; ticks are the unit the game runs on. */
   readonly ticks: number;
   readonly decisions: number;
+  /**
+   * HP on *entering*, before the opening exchange. §4.1 lets a faster enemy act
+   * before the player ever sees the board, so reading it off the opened state
+   * quietly attributed that first bite to nothing — the log said "70/70 HP"
+   * and then "67→" on the next line.
+   */
   readonly hpBefore: number;
   readonly hpAfter: number;
   readonly enemies: readonly string[];
@@ -117,6 +123,8 @@ export function nodeRecord(run: RunState, node: MapNode, level: number): NodeRec
 
 interface EncounterInput {
   readonly run: RunState;
+  /** HP the run entered on, which is not the HP the first turn opens on. */
+  readonly hpOnEntry: number;
   readonly node: MapNode;
   readonly before: CombatState;
   readonly after: CombatState;
@@ -160,7 +168,7 @@ export function encounterRecord(input: EncounterInput): EncounterRecord {
     won: input.after.outcome === 'won',
     ticks: input.after.now - input.before.now,
     decisions,
-    hpBefore: hpOf(input.before, player),
+    hpBefore: input.hpOnEntry,
     hpAfter: hpOf(input.after, player),
     enemies: input.before.actors.filter((a) => a.side === 'enemy').map((a) => a.name),
     cardsPlayed,

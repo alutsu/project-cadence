@@ -14,7 +14,7 @@ import {
   type RunIntent,
   type RunView,
 } from '../../src/run/runFlow.ts';
-import { startRun, type RunState } from '../../src/run/RunState.ts';
+import { restartRun, startRun, type RunState } from '../../src/run/RunState.ts';
 import { createRng } from '../../src/sim/rng.ts';
 import { TAGS } from '../../src/sim/tag.ts';
 
@@ -167,5 +167,53 @@ describe('the flow walks a whole run (GDD §11)', () => {
     const busy = levelOf({ ...run, threat: 6 }, dungeon);
 
     expect(busy).toBe(quiet + 3);
+  });
+});
+
+/**
+ * A run that ended has to be able to start again (GDD §13).
+ *
+ * Found by playtest: `restartRun` hands back a run standing on the **map**, and
+ * the scene then asked it for an encounter. It threw, the board stayed in its
+ * dead state, and every further click recorded another run end — the log had
+ * eight of them. The rule the fix encodes is below: a fresh run is on the map,
+ * and something has to walk it to a fight before a fight can be asked for.
+ */
+describe('a fresh run stands on the map, not in a fight (GDD §11, §13)', () => {
+  it('opens on the map, with nothing entered', () => {
+    const run = startRun(77);
+
+    expect(viewOf(run).kind).toBe('map');
+    expect(run.position.node).toBeNull();
+  });
+
+  it('reaches an encounter once a node is entered, and not before', () => {
+    let run = startRun(77);
+    expect(viewOf(run).kind).toBe('map');
+
+    const view = viewOf(run);
+    if (view.kind !== 'map') throw new Error('expected the map');
+    const dungeon = view.offered.find((node) => node.kind === 'dungeon');
+    if (dungeon === undefined) throw new Error('no dungeon offered');
+
+    run = advanceRun(run, { kind: 'enterNode', node: dungeon.id }).run;
+    expect(viewOf(run).kind).toBe('encounter');
+  });
+
+  it('is on the map again after a death, ready to be walked forward', () => {
+    let run = startRun(77);
+    const view = viewOf(run);
+    if (view.kind !== 'map') throw new Error('expected the map');
+    const node = view.offered[0];
+    if (node === undefined) throw new Error('nothing offered');
+
+    run = advanceRun(run, { kind: 'enterNode', node: node.id }).run;
+    const dead = advanceRun(run, {
+      kind: 'finishEncounter',
+      result: { won: false, hp: 0, events: [] },
+    }).run;
+
+    expect(viewOf(dead)).toEqual({ kind: 'summary', won: false });
+    expect(viewOf(restartRun(dead)).kind).toBe('map');
   });
 });
