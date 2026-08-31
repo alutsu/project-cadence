@@ -364,7 +364,7 @@ brave --headless=new --disable-gpu --no-sandbox --enable-unsafe-swiftshader \
   --disable-background-timer-throttling --disable-backgrounding-occluded-windows \
   --disable-renderer-backgrounding \
   --enable-logging=stderr --v=0 --window-size=1280,720 \
-  --screenshot=/tmp/cadence-m1.png http://localhost:8080/
+  --screenshot=/tmp/cadence-m1.png http://localhost:8081/
 ```
 
 Passes only when the process exits 0, the console shows the `Phaser v4 (WebGL | Web

@@ -85,7 +85,7 @@ export default defineConfig({
    * asset URLs are enough.
    */
   base: './',
-  server: { port: 8080 },
+  server: { port: 8081 },
   build: {
     target: 'esnext',
     // Phaser is ~1.4 MB minified and ships as one vendor chunk. Splitting it buys
