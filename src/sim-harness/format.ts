@@ -37,8 +37,13 @@ export function formatEvent(event: CombatEvent): string {
       return `${at} ${event.status} ${event.actor} ends`;
     case 'intent_executed':
       return `${at} intent ${event.actor} ${event.intent}`;
-    case 'damage_dealt':
-      return `${at} damage ${event.source} -> ${event.target} ${String(event.amount)}`;
+    case 'damage_dealt': {
+      // The tag is printed when there is one, so a figure the Weave has moved
+      // can be read against the card that produced it. An enemy intent carries
+      // none (GDD §7 prices your tags, not theirs) and prints as it always did.
+      const tag = event.tag === null ? '' : ` ${event.tag}`;
+      return `${at} damage ${event.source} -> ${event.target} ${String(event.amount)}${tag}`;
+    }
     case 'strike_committed':
       return `${at} committed ${event.card} -> lands t${String(event.landsAt)}`;
     case 'strike_landed':

@@ -12,14 +12,15 @@ import { findCard, type CardCatalogue, type CardDefinition } from './card.ts';
 import { advanceTime } from './effects.ts';
 import { absorb, gainGuard } from './guard.ts';
 import { OPENING_HAND, drawOne, sendToCooldown, shuffle } from './piles.ts';
-import { breaksPoise, stagger } from './poise.ts';
 import type { Rng } from './rng.ts';
 import { DEFAULT_RULES, WINDUP_COMMIT_WEIGHT, type CombatRules } from './rules.ts';
 import type { CombatEvent } from './events.ts';
 import type { ActorId, CardId } from './ids.ts';
 import { BASE_SPEED, actionDelay, combatSeedTick, drawsOnAction, effectiveSpeed } from './speed.ts';
-import { damagePerTarget, strikeTargets } from './targeting.ts';
+import { strikeTargets } from './targeting.ts';
 import { nextToAct } from './timeline.ts';
+import { resolveCard, type ResolvedCard } from './resolve.ts';
+import { applyDamage, resolveHit, resolveIntent } from './strike.ts';
 import {
   findActor,
   playerActor,
@@ -29,7 +30,7 @@ import {
   type CombatStep,
   type PendingStrike,
 } from './state.ts';
-import { POISON_INTERVAL, damageScale, isPeriodic, magnitudeOf, type Status } from './status.ts';
+import { POISON_INTERVAL, isPeriodic, magnitudeOf, type Status } from './status.ts';
 import { addTicks, TICK_ZERO, tick, type Tick } from './tick.ts';
 import { NEUTRAL_WEAVE, NO_RESISTANCE, type ResistanceTable, type WeaveSnapshot } from './weave.ts';
 
@@ -76,12 +77,6 @@ export interface CombatSetup {
    * unchanged by the Weave arriving.
    */
   readonly weave?: WeaveSnapshot;
-}
-
-interface DamageOrder {
-  readonly source: ActorId;
-  readonly target: ActorId;
-  readonly amount: number;
 }
 
 /** GDD §4.1: seed every actor at `ceil(600 / speed)`; faster actors act first. */
@@ -220,7 +215,7 @@ function refundOnKill(
 
 interface PendingOrder {
   readonly actor: Actor;
-  readonly card: CardDefinition;
+  readonly resolved: ResolvedCard;
   readonly target: Actor;
 }
 
@@ -230,14 +225,11 @@ interface PendingOrder {
  * coming — so the cost is commitment and exposure rather than four lost turns.
  */
 function commitPending(state: CombatState, order: PendingOrder): CombatStep {
-  const landsAt = addTicks(state.now, order.card.weight);
+  const landsAt = addTicks(state.now, order.resolved.weight);
   const pending: PendingStrike = {
-    card: order.card.id,
-    name: order.card.name,
     source: order.actor.id,
     target: order.target.id,
-    targeting: order.card.targeting,
-    amount: damagePerTarget(order.card),
+    resolved: order.resolved,
     landsAt,
   };
 
@@ -248,7 +240,7 @@ function commitPending(state: CombatState, order: PendingOrder): CombatStep {
         kind: 'strike_committed',
         at: state.now,
         actor: order.actor.id,
-        card: order.card.id,
+        card: order.resolved.card,
         landsAt,
       },
     ],
@@ -256,8 +248,8 @@ function commitPending(state: CombatState, order: PendingOrder): CombatStep {
 }
 
 interface StrikeOrder {
-  readonly source: ActorId;
-  readonly card: CardDefinition;
+  readonly attacker: Actor;
+  readonly resolved: ResolvedCard;
   readonly chosen: ActorId;
 }
 
@@ -270,53 +262,26 @@ interface StrikeOrder {
  * therefore reads in the order the line was struck, left to right.
  */
 function strikeAll(state: CombatState, order: StrikeOrder): CombatStep {
-  const amount = damagePerTarget(order.card);
   const events: CombatEvent[] = [];
   let current = state;
 
-  for (const target of strikeTargets(state, order.card.targeting, order.chosen)) {
-    const struck = applyDamage(current, { source: order.source, target, amount });
+  for (const target of strikeTargets(state, order.resolved.targeting, order.chosen)) {
+    // Priced per defender, not once for the line: §7.2's resistance is a
+    // property of the enemy, so an AoE across a resistant Warden and an
+    // unresistant rat lands two different numbers from the same card.
+    const defender = findActor(current, target);
+    if (defender === undefined) continue;
+
+    const hit = resolveHit(
+      { resolved: order.resolved, attacker: order.attacker, defender },
+      current.weave,
+    );
+    const struck = applyDamage(current, { source: order.attacker.id, target, hit });
     current = struck.state;
     events.push(...struck.events);
   }
 
   return { state: current, events };
-}
-
-/**
- * Guard is checked before HP from S5 (GDD §4.4); in S1 damage lands straight on
- * HP so the scheduler can be tested on its own.
- *
- * Deliberately does not settle the encounter's outcome: the actor that struck
- * still has to be rescheduled, and the log must read in causal order.
- */
-function applyDamage(state: CombatState, order: DamageOrder): CombatStep {
-  const target = findActor(state, order.target);
-  if (target === undefined || !isAlive(target)) return { state, events: [] };
-
-  const source = findActor(state, order.source);
-  const amount = Math.round(order.amount * damageScale(source?.statuses ?? []));
-  const { actor: wounded, absorbed } = absorb(target, amount);
-
-  const events: CombatEvent[] = [
-    { kind: 'damage_dealt', at: state.now, source: order.source, target: order.target, amount },
-  ];
-  if (absorbed > 0) {
-    events.push({ kind: 'guard_absorbed', at: state.now, actor: order.target, amount: absorbed });
-  }
-
-  // GDD §4.6: a single hit at or above the Poise threshold staggers. The check
-  // uses the damage the attack carried, before Guard soaked any of it.
-  const shaken =
-    isAlive(wounded) && breaksPoise(wounded, amount)
-      ? stagger(wounded, state.rules.firstStagger)
-      : null;
-  if (shaken !== null) {
-    events.push({ kind: 'staggered', at: state.now, actor: order.target, delay: shaken.delay });
-  }
-  if (!isAlive(wounded)) events.push({ kind: 'actor_died', at: state.now, actor: order.target });
-
-  return { state: withActor(state, shaken?.actor ?? wounded), events };
 }
 
 /** Applies an intent's status to the player, if it carries one (GDD §4.5). */
@@ -405,7 +370,11 @@ function resolveEnemyTurn(state: CombatState, enemy: Actor): CombatStep {
   const struck =
     player === undefined
       ? { state: bled.state, events: [] }
-      : applyDamage(bled.state, { source: enemy.id, target: player.id, amount: intent.damage });
+      : applyDamage(bled.state, {
+          source: enemy.id,
+          target: player.id,
+          hit: resolveIntent(enemy, intent),
+        });
 
   // The intent lands, then the rotation advances — so what the strip showed is
   // what happened, and what it shows next is what comes next (GDD §4.2).
@@ -604,12 +573,17 @@ function commitPlay(
   const bled = sufferBleed(state, actor);
   const windup = usesWindup(state, card);
 
-  const struck = windup
-    ? commitPending(bled.state, { actor, card, target })
-    : strikeAll(bled.state, { source: actor.id, card, chosen: target.id });
+  // Resolved once, here, and every consumer below reads the result rather than
+  // the printed card: Weight, Recovery and damage all move (GDD §7.1, §6.2) and
+  // a second reading of the card is a second answer (docs/M1_PLAN.md D27).
+  const resolved = resolveCard(state.weave, card);
 
-  const cooled = sendToCooldown(struck.state, card.id);
-  const committed = windup ? WINDUP_COMMIT_WEIGHT : card.weight;
+  const struck = windup
+    ? commitPending(bled.state, { actor, resolved, target })
+    : strikeAll(bled.state, { attacker: actor, resolved, chosen: target.id });
+
+  const cooled = sendToCooldown(struck.state, { card: card.id, recovery: resolved.recovery });
+  const committed = windup ? WINDUP_COMMIT_WEIGHT : resolved.weight;
   const acted = withActor(
     cooled.state,
     reschedule(currentActor(cooled.state, actor), at, {
@@ -621,7 +595,9 @@ function commitPlay(
   return {
     ok: true,
     step: settleOutcome({ ...acted, activeActorId: null }, [
-      { kind: 'card_played', at, actor: actor.id, card: card.id, weight: card.weight },
+      // The Weight logged is the one paid, not the one printed: an Ascendant
+      // card costs one tick less and the log has to say what happened (§4.2).
+      { kind: 'card_played', at, actor: actor.id, card: card.id, weight: resolved.weight },
       ...bled.events,
       ...struck.events,
       ...cooled.events,

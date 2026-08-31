@@ -66,10 +66,12 @@ describe('determinism (GDD §20.2, CLAUDE.md §7.2)', () => {
       't5 scheduled rat -> t9',
       't6 turn player',
       't6 no draw (draw_pile_empty)',
-      // A Heavy card costs ten ticks — but 24 damage clears the rat's Poise
-      // threshold, so the bite due at t9 slides to t12 (GDD §4.6).
+      // A Heavy card costs ten ticks. Crush prints 24 and lands 17: it is a
+      // Shadow card and the rat shrugs off 30% of Shadow (GDD §7.2). Still
+      // over the rat's Poise threshold, so the bite due at t9 slides to t12 —
+      // but the Poise check now asks what *landed*, not what was printed.
       't6 played player crush w10',
-      't6 damage player -> rat 24',
+      't6 damage player -> rat 17 Shadow',
       't6 staggered rat +3',
       // Recovery 26: gone until t32, and the strip can say so in advance.
       't6 cooldown crush -> t32',
@@ -96,8 +98,10 @@ describe('determinism (GDD §20.2, CLAUDE.md §7.2)', () => {
       't17 poison player ticks 2',
       't19 turn player',
       't19 no draw (draw_pile_empty)',
+      // Lunge is Physical and the rat resists none of it, so it lands its
+      // printed 11 — the same card that would land 7 against the Warden.
       't19 played player lunge w4',
-      't19 damage player -> rat 11',
+      't19 damage player -> rat 11 Physical',
       // The second Stagger of the encounter, worth one tick less than the
       // first — the ladder halving down toward its floor (GDD §4.6).
       't19 staggered rat +2',
@@ -112,23 +116,34 @@ describe('determinism (GDD §20.2, CLAUDE.md §7.2)', () => {
       't22 scheduled rat -> t26',
       't23 turn player',
       't23 no draw (draw_pile_empty)',
-      't23 played player cleave w6',
       // Cleave hits everything for 60% of its printed 14 (GDD §4.8); with one
-      // rat left standing that is 8, and 8 is enough.
-      't23 damage player -> rat 8',
-      't23 died rat',
+      // rat left standing that is 8. It used to be enough — before the Weave,
+      // Crush opened for 24 rather than 17, and the rat was seven points
+      // closer to dead. The same four cards no longer close the fight, which
+      // is the whole point of §7: what a card is worth is a run-time question.
+      't23 played player cleave w6',
+      't23 damage player -> rat 8 Fire',
+      't23 staggered rat +1',
       't23 cooldown cleave -> t37',
       't23 scheduled player -> t29',
-      // The encounter closes only after the turn that ended it has resolved.
-      't23 combat_ended won',
+      't27 returned lunge',
+      't27 poison player ticks 2',
+      't27 turn rat',
+      't27 intent rat Gnaw',
+      't27 damage rat -> player 2',
+      't27 scheduled rat -> t31',
+      't29 turn player',
+      't29 drew lunge',
     ]);
   });
 
   it('leaves the survivors in the state the log describes', () => {
     const { state } = play(SCRIPT);
 
-    expect(state.outcome).toBe('won');
-    expect(findActor(state, PLAYER)?.hp).toBe(61);
-    expect(findActor(state, RAT)?.hp).toBe(0);
+    // The script no longer wins: the Weave took seven points off Crush and the
+    // rat outlives all four cards (docs/M1_PLAN.md D22, D27).
+    expect(state.outcome).toBe('ongoing');
+    expect(findActor(state, PLAYER)?.hp).toBe(57);
+    expect(findActor(state, RAT)?.hp).toBe(5);
   });
 });

@@ -54,13 +54,14 @@ describe('Ultimate rules (GDD §22 Q1)', () => {
     expect(findActor(step.state, PLAYER)?.nextActTick).toBe(state.now + 4);
     // Nothing has landed yet — it is in flight, and the queue can show it.
     expect(findActor(step.state, RAT)?.hp).toBe(200);
-    expect(step.state.pending).toEqual([
-      expect.objectContaining({
-        card: CATACLYSM,
-        landsAt: state.now + 16,
-        amount: CATACLYSM_DAMAGE,
-      }),
-    ]);
+    // The strike carries the resolved card, not a frozen damage figure: it is
+    // priced at impact, against whoever is standing then and whatever Empower
+    // the attacker has by then (docs/M1_PLAN.md D27).
+    const inFlight = step.state.pending[0];
+    expect(step.state.pending).toHaveLength(1);
+    expect(inFlight?.landsAt).toBe(state.now + 16);
+    expect(inFlight?.resolved.card).toBe(CATACLYSM);
+    expect(inFlight?.resolved.basePerTarget).toBe(CATACLYSM_DAMAGE);
     expect(step.events).toContainEqual(
       expect.objectContaining({ kind: 'strike_committed', landsAt: state.now + 16 }),
     );

@@ -54,12 +54,21 @@ export function drawOne(state: CombatState): CombatStep {
   };
 }
 
-/** Moves a played card out of hand and onto its Recovery clock (GDD §4.9). */
-export function sendToCooldown(state: CombatState, card: CardId): CombatStep {
-  const definition = findCard(state.catalogue, card);
-  if (definition === undefined) throw new Error(`unknown card sent to Cooldown: ${card}`);
+export interface CooldownOrder {
+  readonly card: CardId;
+  /**
+   * Taken rather than looked up: Recovery moves (GDD §6.2's HASTE and ECHO
+   * frames), so the printed number on the card is not necessarily the clock the
+   * card is actually on. The caller has already resolved it once, and resolving
+   * it a second time here is how the two would come to disagree.
+   */
+  readonly recovery: Tick;
+}
 
-  const returnTick = addTicks(state.now, definition.recovery);
+/** Moves a played card out of hand and onto its Recovery clock (GDD §4.9). */
+export function sendToCooldown(state: CombatState, order: CooldownOrder): CombatStep {
+  const { card, recovery } = order;
+  const returnTick = addTicks(state.now, recovery);
   const at = state.hand.indexOf(card);
   const hand = at === -1 ? state.hand : [...state.hand.slice(0, at), ...state.hand.slice(at + 1)];
 

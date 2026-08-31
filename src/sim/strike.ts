@@ -1,0 +1,151 @@
+import { isAlive, type Actor, type Intent } from './actor.ts';
+import type { CardDefinition } from './card.ts';
+import type { CombatEvent } from './events.ts';
+import { absorb } from './guard.ts';
+import type { ActorId } from './ids.ts';
+import { breaksPoise, stagger } from './poise.ts';
+import type { ResolvedCard } from './resolve.ts';
+import { resolveCard } from './resolve.ts';
+import {
+  findActor,
+  livingEnemies,
+  playerActor,
+  withActor,
+  type CombatState,
+  type CombatStep,
+} from './state.ts';
+import { damageScale } from './status.ts';
+import type { Tag } from './tag.ts';
+import { weaveVerdict, type TagVerdict, type WeaveSnapshot } from './weave.ts';
+
+/**
+ * The one damage path (docs/M1_PLAN.md D27).
+ *
+ * M0 had two. An immediate strike computed its damage at the moment it landed
+ * and applied Empower and Weaken on the way; a wind-up Ultimate snapshotted a
+ * bare number at commit and skipped them entirely. The Weave would have doubled
+ * that divergence — a multiplier could honestly have been read at either end —
+ * so both now resolve through here.
+ */
+
+/** A blow, fully priced, against one defender. */
+export interface ResolvedHit {
+  /** What lands, after the Weave and after Empower or Weaken. Rounded once. */
+  readonly amount: number;
+  /**
+   * The tag the blow carries, or null for an enemy intent. Enemies strike with
+   * no tag: §7 prices *your* tags against *their* resistance, and the player
+   * has no resistance table to price anything against.
+   */
+  readonly tag: Tag | null;
+  /** Why `amount` is what it is — the panel and the hover read it (P3). */
+  readonly verdict: TagVerdict | null;
+}
+
+export interface HitOrder {
+  readonly resolved: ResolvedCard;
+  readonly attacker: Actor;
+  readonly defender: Actor;
+}
+
+/**
+ * GDD §7 applied to one blow. Exactly two roundings exist in the whole
+ * pipeline and this is the second: `damagePerTarget` rounds the AoE share,
+ * because that is the figure the card face prints, and everything else lands
+ * here. A third would let the hover and the commit disagree by a point.
+ */
+export function resolveHit(order: HitOrder, weave: WeaveSnapshot): ResolvedHit {
+  const { resolved, attacker, defender } = order;
+  const verdict = weaveVerdict({
+    tag: resolved.tag,
+    weave,
+    resistances: defender.resistances,
+  });
+  const scaled = resolved.basePerTarget * verdict.multiplier * damageScale(attacker.statuses);
+
+  return { amount: Math.round(scaled), tag: resolved.tag, verdict };
+}
+
+/** An enemy's telegraphed blow. No card, no tag, no Weave — just Empower. */
+export function resolveIntent(attacker: Actor, intent: Intent): ResolvedHit {
+  return {
+    amount: Math.round(intent.damage * damageScale(attacker.statuses)),
+    tag: null,
+    verdict: null,
+  };
+}
+
+export interface DamageOrder {
+  readonly source: ActorId;
+  readonly target: ActorId;
+  readonly hit: ResolvedHit;
+}
+
+/**
+ * Guard absorbs before HP (GDD §4.4), then the Poise threshold is checked.
+ *
+ * Deliberately does not settle the encounter's outcome: the actor that struck
+ * still has to be rescheduled, and the log must read in causal order.
+ */
+export function applyDamage(state: CombatState, order: DamageOrder): CombatStep {
+  const target = findActor(state, order.target);
+  if (target === undefined || !isAlive(target)) return { state, events: [] };
+
+  const { amount, tag } = order.hit;
+  const { actor: wounded, absorbed } = absorb(target, amount);
+
+  const events: CombatEvent[] = [
+    {
+      kind: 'damage_dealt',
+      at: state.now,
+      source: order.source,
+      target: order.target,
+      amount,
+      tag,
+    },
+  ];
+  if (absorbed > 0) {
+    events.push({ kind: 'guard_absorbed', at: state.now, actor: order.target, amount: absorbed });
+  }
+
+  // GDD §4.6: a single hit at or above the Poise threshold staggers. The check
+  // uses the damage the attack carried, before Guard soaked any of it — and
+  // after the Weave, because a resisted blow is a smaller blow, and §4.6 asks
+  // what actually landed rather than what was printed on the card.
+  const shaken =
+    isAlive(wounded) && breaksPoise(wounded, amount)
+      ? stagger(wounded, state.rules.firstStagger)
+      : null;
+  if (shaken !== null) {
+    events.push({ kind: 'staggered', at: state.now, actor: order.target, delay: shaken.delay });
+  }
+  if (!isAlive(wounded)) events.push({ kind: 'actor_died', at: state.now, actor: order.target });
+
+  return { state: withActor(state, shaken?.actor ?? wounded), events };
+}
+
+/**
+ * What one enemy would take from this card if the player swung it now.
+ *
+ * GDD §15: *hovering a card shows post-Weave damage against the current target,
+ * not base damage — the player should never do multiplication in their head*.
+ * The card face cannot work that out for itself (CLAUDE.md §2.1), and once §7
+ * moves a tag the printed figure stops being the answer: Crush prints 24 and
+ * lands 17 against a rat that shrugs off 30% of Shadow.
+ *
+ * Falls back to the front of the line when nothing is targeted, because that is
+ * what a click would hit, and to the unpriced figure when there is no line left
+ * to price against.
+ */
+export function damageAgainst(
+  state: CombatState,
+  card: CardDefinition,
+  target: ActorId | null,
+): number {
+  const resolved = resolveCard(state.weave, card);
+  const attacker = playerActor(state);
+  const defender = target === null ? livingEnemies(state)[0] : findActor(state, target);
+
+  if (attacker === undefined || defender === undefined) return resolved.basePerTarget;
+  return resolveHit({ resolved, attacker, defender }, state.weave).amount;
+}

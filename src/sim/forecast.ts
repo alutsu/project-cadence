@@ -4,7 +4,15 @@ import { advanceToDecision, reduce } from './combat.ts';
 import { absorb, decayGuard } from './guard.ts';
 import type { ActorId } from './ids.ts';
 import { actionDelay } from './speed.ts';
-import { findActor, playerActor, type CombatOutcome, type CombatState } from './state.ts';
+import {
+  findActor,
+  livingEnemies,
+  playerActor,
+  type CombatOutcome,
+  type CombatState,
+  type PendingStrike,
+} from './state.ts';
+import { resolveHit } from './strike.ts';
 import { nextToAct } from './timeline.ts';
 import { addTicks, tick, type Tick } from './tick.ts';
 import { actorSpeed, currentIntent, isAlive, nextIntentIndex } from './actor.ts';
@@ -75,7 +83,12 @@ function mergePending(
     actor: strike.source,
     at: strike.landsAt,
     kind: 'strike',
-    intent: { name: strike.name, weight: tick(0), damage: strike.amount, applies: null },
+    intent: {
+      name: strike.resolved.name,
+      weight: tick(0),
+      damage: projectedStrikeDamage(state, strike),
+      applies: null,
+    },
   }));
 
   // Effects resolve before turns at the same tick, so a strike sorts first.
@@ -100,6 +113,25 @@ function projectNextTurn(actor: Actor): Actor | null {
     nextActTick: addTicks(actor.nextActTick, actionDelay(intent.weight, actorSpeed(actor))),
     intentIndex: nextIntentIndex(actor),
   };
+}
+
+/**
+ * What a wind-up strike would land for, if it arrived against the board as it
+ * stands now (GDD §4.2).
+ *
+ * A projection rather than a promise: the strike is priced at impact
+ * (docs/M1_PLAN.md D27), so an Empower gained in the meantime, or the intended
+ * target dying, will move it. That is the same honesty the strip already gives
+ * an enemy intent, and it runs through `resolveHit` — the function the landing
+ * itself calls — rather than a second arithmetic path (CLAUDE.md §2.2).
+ */
+function projectedStrikeDamage(state: CombatState, strike: PendingStrike): number {
+  const attacker = findActor(state, strike.source);
+  const defender =
+    strike.resolved.targeting === 'all' ? livingEnemies(state)[0] : findActor(state, strike.target);
+
+  if (attacker === undefined || defender === undefined) return 0;
+  return resolveHit({ resolved: strike.resolved, attacker, defender }, state.weave).amount;
 }
 
 export interface PreviewHit {

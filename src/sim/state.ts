@@ -1,6 +1,7 @@
 import { isAlive, type Actor } from './actor.ts';
-import type { CardCatalogue, CardTargeting } from './card.ts';
+import type { CardCatalogue } from './card.ts';
 import type { CombatEvent } from './events.ts';
+import type { ResolvedCard } from './resolve.ts';
 import type { CombatRules } from './rules.ts';
 import type { ActorId, CardId } from './ids.ts';
 import type { Tick } from './tick.ts';
@@ -32,18 +33,18 @@ export interface CooldownEntry {
  */
 /** An Ultimate in flight under the wind-up rule (GDD §22 Q1). */
 export interface PendingStrike {
-  readonly card: CardId;
-  readonly name: string;
   readonly source: ActorId;
   readonly target: ActorId;
   /**
-   * Expanded when the strike lands, never when it is committed: an AoE hits the
-   * enemies that are alive at the moment of impact (GDD §4.8), and a wind-up is
-   * long enough for that to be a different set.
+   * The card as it was resolved at commit — but *priced* only at impact.
+   *
+   * M0 stored a bare number here, which was never a real snapshot: `landStrike`
+   * already expands an AoE against the line that is standing when it arrives
+   * (GDD §4.8), not the one that was there when the card was played. Carrying
+   * the resolved card instead of a figure makes the rest agree with that, and
+   * is what lets both damage paths share one resolver (docs/M1_PLAN.md D27).
    */
-  readonly targeting: CardTargeting;
-  /** What one enemy takes, already reduced if this strike hits all of them. */
-  readonly amount: number;
+  readonly resolved: ResolvedCard;
   readonly landsAt: Tick;
 }
 

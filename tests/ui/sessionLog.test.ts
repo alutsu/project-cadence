@@ -11,10 +11,10 @@ const CRUSH = cardId('crush');
 
 const EVENTS: readonly CombatEvent[] = [
   { kind: 'card_played', at: tick(6), actor: PLAYER, card: STRIKE, weight: tick(4) },
-  { kind: 'damage_dealt', at: tick(6), source: PLAYER, target: RAT, amount: 9 },
+  { kind: 'damage_dealt', tag: null, at: tick(6), source: PLAYER, target: RAT, amount: 9 },
   { kind: 'staggered', at: tick(6), actor: RAT, delay: tick(3) },
   { kind: 'waited', at: tick(10), actor: PLAYER },
-  { kind: 'damage_dealt', at: tick(12), source: RAT, target: PLAYER, amount: 3 },
+  { kind: 'damage_dealt', tag: null, at: tick(12), source: RAT, target: PLAYER, amount: 3 },
 ];
 
 /** The gate asks questions a player cannot answer from memory (plan §7). */
@@ -49,7 +49,7 @@ describe('session instrumentation', () => {
     const log = new SessionLog();
     log.record(
       [
-        { kind: 'damage_dealt', at: tick(12), source: RAT, target: PLAYER, amount: 3 },
+        { kind: 'damage_dealt', tag: null, at: tick(12), source: RAT, target: PLAYER, amount: 3 },
         { kind: 'status_proc', at: tick(17), actor: PLAYER, status: 'poison', amount: 4 },
         // Someone else's Poison is not the player's problem.
         { kind: 'status_proc', at: tick(17), actor: RAT, status: 'poison', amount: 9 },
@@ -65,7 +65,7 @@ describe('session instrumentation', () => {
     expect(log.lastHarm()).toBeNull();
 
     log.record(
-      [{ kind: 'damage_dealt', at: tick(12), source: RAT, target: PLAYER, amount: 3 }],
+      [{ kind: 'damage_dealt', tag: null, at: tick(12), source: RAT, target: PLAYER, amount: 3 }],
       PLAYER,
     );
     expect(log.lastHarm()).toEqual({ kind: 'blow', source: RAT, amount: 3 });

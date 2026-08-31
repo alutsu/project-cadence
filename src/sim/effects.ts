@@ -1,8 +1,7 @@
 import { isAlive, type Actor } from './actor.ts';
 import type { CombatEvent } from './events.ts';
-import { absorb, decayGuard } from './guard.ts';
-import { breaksPoise, stagger } from './poise.ts';
-import type { ActorId } from './ids.ts';
+import { decayGuard } from './guard.ts';
+import { applyDamage, resolveHit } from './strike.ts';
 import { returnDueCards } from './piles.ts';
 import type { CombatState, CombatStep, PendingStrike } from './state.ts';
 import { withActor } from './state.ts';
@@ -93,9 +92,9 @@ function landPendingStrikes(state: CombatState, at: Tick): CombatStep {
   let current: CombatState = { ...state, pending: state.pending.filter((s) => s.landsAt > at) };
 
   for (const strike of due) {
-    const struck = landStrike(current, strike, at);
+    const struck = landStrike(current, strike);
     current = struck.state;
-    events.push({ kind: 'strike_landed', at, card: strike.card }, ...struck.events);
+    events.push({ kind: 'strike_landed', at, card: strike.resolved.card }, ...struck.events);
   }
 
   return { state: current, events };
@@ -106,44 +105,27 @@ function landPendingStrikes(state: CombatState, at: Tick): CombatStep {
  * for an AoE, that is the line as it is at impact, not as it was when the card
  * was committed (GDD §4.8, §22 Q1).
  */
-function landStrike(state: CombatState, strike: PendingStrike, at: Tick): CombatStep {
+function landStrike(state: CombatState, strike: PendingStrike): CombatStep {
   const events: CombatEvent[] = [];
   let current = state;
+  const attacker = current.actors.find((actor) => actor.id === strike.source);
 
-  for (const target of strikeTargets(state, strike.targeting, strike.target)) {
-    const struck = strikeOne(current, { strike, target, at });
+  for (const target of strikeTargets(state, strike.resolved.targeting, strike.target)) {
+    const defender = current.actors.find((actor) => actor.id === target);
+    if (attacker === undefined || defender === undefined) continue;
+
+    // Priced here, at impact, not at commit. The line this expands over is
+    // already the one standing now rather than the one that was there when the
+    // card was played, and a damage figure frozen against a different board
+    // than the targets it lands on was never a real snapshot — so both follow
+    // the same clock (docs/M1_PLAN.md D27).
+    const hit = resolveHit({ resolved: strike.resolved, attacker, defender }, current.weave);
+    const struck = applyDamage(current, { source: strike.source, target, hit });
     current = struck.state;
     events.push(...struck.events);
   }
 
   return { state: current, events };
-}
-
-interface LandingOrder {
-  readonly strike: PendingStrike;
-  readonly target: ActorId;
-  readonly at: Tick;
-}
-
-function strikeOne(state: CombatState, order: LandingOrder): CombatStep {
-  const { strike, target: targetId, at } = order;
-  const target = state.actors.find((actor) => actor.id === targetId);
-  if (target === undefined || !isAlive(target)) return { state, events: [] };
-
-  const { actor: wounded, absorbed } = absorb(target, strike.amount);
-  const events: CombatEvent[] = [
-    { kind: 'damage_dealt', at, source: strike.source, target: targetId, amount: strike.amount },
-  ];
-  if (absorbed > 0) events.push({ kind: 'guard_absorbed', at, actor: targetId, amount: absorbed });
-
-  const shaken =
-    isAlive(wounded) && breaksPoise(wounded, strike.amount)
-      ? stagger(wounded, state.rules.firstStagger)
-      : null;
-  if (shaken !== null) events.push({ kind: 'staggered', at, actor: targetId, delay: shaken.delay });
-  if (!isAlive(wounded)) events.push({ kind: 'actor_died', at, actor: targetId });
-
-  return { state: withActor(state, shaken?.actor ?? wounded), events };
 }
 
 function resolveProcs(state: CombatState, at: Tick): CombatStep {

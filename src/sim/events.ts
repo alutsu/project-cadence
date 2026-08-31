@@ -1,5 +1,6 @@
 import type { ActorId, CardId } from './ids.ts';
 import type { StatusKind } from './status.ts';
+import type { Tag } from './tag.ts';
 import type { Tick } from './tick.ts';
 
 /**
@@ -82,6 +83,13 @@ export type CombatEvent =
       readonly source: ActorId;
       readonly target: ActorId;
       readonly amount: number;
+      /**
+       * What the blow was made of, or null for an enemy intent. Saturation
+       * (GDD §7.3) is defined as a share of damage *by tag*, and reconstructing
+       * that by pairing this event with the last `card_played` is the kind of
+       * second derivation CLAUDE.md §2.2 exists to prevent.
+       */
+      readonly tag: Tag | null;
     }
   | {
       readonly kind: 'staggered';

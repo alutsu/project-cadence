@@ -387,7 +387,7 @@ export class CombatScene extends Phaser.Scene {
     views.bar.render(beat.after);
     views.piles.render(beat.after);
     if (over) views.hand.hide();
-    else views.hand.render(beat.after);
+    else views.hand.render(beat.after, this.targetIn(beat.after));
 
     this.soundOf(beat);
     if (pace === 'paced') this.sightOf(beat);
@@ -509,7 +509,7 @@ export class CombatScene extends Phaser.Scene {
     // The cards are inert once the fight is over, and the summary needs the
     // room they occupy.
     if (over) views.hand.hide();
-    else views.hand.render(this.state);
+    else views.hand.render(this.state, this.currentTarget());
     views.bar.render(this.state);
     if (over) views.readout.hide();
     else views.readout.render('', null);

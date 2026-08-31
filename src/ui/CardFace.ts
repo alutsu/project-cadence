@@ -1,6 +1,5 @@
 import Phaser from 'phaser';
 import type { CardDefinition } from '../sim/card.ts';
-import { damagePerTarget } from '../sim/targeting.ts';
 import {
   COLORS,
   ENEMY_INK,
@@ -22,6 +21,12 @@ export interface CardFaceOptions {
    * that gap has to be visible, because it is the thing being chosen.
    */
   readonly delay: number;
+  /**
+   * What this card would deal to one enemy right now, from the sim. Not the
+   * printed number: the Weave moves it per target (GDD §7.2), and §15 says the
+   * player never does that multiplication — so neither does this view.
+   */
+  readonly damage: number;
   readonly onPlay: (card: CardDefinition) => void;
   readonly onHover: (card: CardDefinition | null) => void;
 }
@@ -87,7 +92,7 @@ export class CardFace {
       );
     }
 
-    for (const column of statColumns(card)) {
+    for (const column of statColumns(card, options.damage)) {
       this.view.add(
         scene.add
           .text(column.offset, cardHeight / 2 - 84, column.label, {
@@ -147,17 +152,17 @@ export class CardFace {
   }
 }
 
-function statColumns(card: CardDefinition): readonly StatColumn[] {
+function statColumns(card: CardDefinition, damage: number): readonly StatColumn[] {
   // Kept well inside the card edge: the hand is tilted, so neighbouring cards
   // overlap at the corners and anything near an edge gets painted over.
   const spread = Math.round(LAYOUT.hand.cardWidth / 3.6);
   return [
     { label: 'WGT', value: String(card.weight), offset: -spread, emphasis: true },
-    // An AoE's printed damage is not what any enemy takes, so the figure shown
-    // is the one the sim will deal to each of them (GDD §4.8, P3). The label
-    // stays "DMG": a wider one broke the three-column alignment §15 relies on,
-    // and the card already says it hits all of them.
-    { label: 'DMG', value: String(damagePerTarget(card)), offset: 0, emphasis: false },
+    // Neither an AoE's printed damage nor a resisted card's is what an enemy
+    // actually takes, so the figure shown is the one the sim will deal to each
+    // of them (GDD §4.8, §7.2, P3). The label stays "DMG": a wider one broke
+    // the three-column alignment §15 relies on.
+    { label: 'DMG', value: String(damage), offset: 0, emphasis: false },
     { label: 'REC', value: String(card.recovery), offset: spread, emphasis: false },
   ];
 }

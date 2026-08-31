@@ -91,9 +91,12 @@ describe('cards that hit the whole line (GDD §4.8)', () => {
 
     const many = opened(crowd.actors, ['sweep']);
     expect(livingEnemies(many)).toHaveLength(3);
-    // Sweep prints 10, lands 6 on each of three: 18, against Lunge's 11.
+    // Sweep prints 10 and lands 6 on each — except the Chime Adept, which
+    // shrugs off half of Storm (GDD §7.2), so the swing collects 6 + 6 + 3.
+    // The reach is still what makes it worth playing; the Weave is what makes
+    // *which* line it is swung into a question (§7).
     expect(total(blows(play(many, 'sweep', livingEnemies(many)[0]?.id ?? never()).events))).toBe(
-      18,
+      15,
     );
   });
 
@@ -125,7 +128,9 @@ describe('cards that hit the whole line (GDD §4.8)', () => {
     // The strike carries the reduced figure and its reach, not the printed 44:
     // it expands over whoever is alive at impact, which a wind-up is long
     // enough to change (GDD §4.8, §22 Q1).
-    expect(committed.step.state.pending[0]).toMatchObject({ amount: 26, targeting: 'all' });
+    expect(committed.step.state.pending[0]).toMatchObject({
+      resolved: { basePerTarget: 26, targeting: 'all' },
+    });
   });
 
   it('previews exactly what the commit delivers, for every AoE in the deck', () => {
