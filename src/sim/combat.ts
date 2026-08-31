@@ -30,6 +30,7 @@ import {
 } from './state.ts';
 import { POISON_INTERVAL, damageScale, isPeriodic, magnitudeOf, type Status } from './status.ts';
 import { addTicks, TICK_ZERO, tick, type Tick } from './tick.ts';
+import { NEUTRAL_WEAVE, NO_RESISTANCE, type ResistanceTable, type WeaveSnapshot } from './weave.ts';
 
 /**
  * Combat is a reducer: `(State, Action) => State`, immutable, emitting an event
@@ -60,6 +61,8 @@ export interface ActorSeed {
   readonly hp?: number;
   /** GDD §4.6. Zero means nothing staggers this actor — the player's case. */
   readonly poise: number;
+  /** GDD §7.2. Absent means the actor shrugs off nothing. */
+  readonly resistances?: ResistanceTable;
   readonly intents: readonly Intent[];
 }
 
@@ -71,6 +74,12 @@ export interface CombatSetup {
   readonly rng: Rng;
   /** Tuning knobs for the M0 feel pass; defaults when omitted. */
   readonly rules?: CombatRules;
+  /**
+   * Where the tags stand (GDD §7). Omitted means neutral — which is what every
+   * M0 test and the balance harness want, and is why the M0 golden log is
+   * unchanged by the Weave arriving.
+   */
+  readonly weave?: WeaveSnapshot;
 }
 
 interface DamageOrder {
@@ -85,6 +94,7 @@ export function startCombat(setup: CombatSetup): CombatStep {
   const state: CombatState = {
     now: TICK_ZERO,
     rules: setup.rules ?? DEFAULT_RULES,
+    weave: setup.weave ?? NEUTRAL_WEAVE,
     pending: [],
     actors,
     catalogue: setup.catalogue,
@@ -168,6 +178,7 @@ function seedActor(seed: ActorSeed, index: number): Actor {
     maxHp: seed.maxHp,
     guard: 0,
     poise: seed.poise,
+    resistances: seed.resistances ?? NO_RESISTANCE,
     staggersTaken: 0,
     statuses: [],
     nextActTick: combatSeedTick(effectiveSpeed(seed.baseSpeed, NO_SPEED_GAIN)),

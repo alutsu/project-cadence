@@ -11,6 +11,7 @@ import {
 import { tick } from '../../src/sim/tick.ts';
 import { actorDelay, type Actor } from '../../src/sim/actor.ts';
 import { actorId } from '../../src/sim/ids.ts';
+import { NO_RESISTANCE } from '../../src/sim/weave.ts';
 
 describe('effectiveSpeed (GDD §4.7)', () => {
   it('is linear up to the soft cap', () => {
@@ -90,6 +91,7 @@ describe('drawsOnAction (GDD §4.7 [AMD])', () => {
       maxHp: 70,
       guard: 0,
       poise: 0,
+      resistances: NO_RESISTANCE,
       staggersTaken: 0,
       statuses: [],
       nextActTick: tick(6),

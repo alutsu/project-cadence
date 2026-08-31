@@ -1,5 +1,6 @@
 import type { CardCatalogue, CardDefinition, CardTargeting } from '../sim/card.ts';
 import { cardId, type CardId } from '../sim/ids.ts';
+import { isTag, type Tag } from '../sim/tag.ts';
 import { WEIGHT_CLASSES, isWeightClass } from '../sim/weightClass.ts';
 import cardData from './cards.m0.json' with { type: 'json' };
 
@@ -18,7 +19,7 @@ interface RawCard {
   readonly class: string;
   readonly damage: number;
   readonly targeting: CardTargeting;
-  readonly tags: readonly string[];
+  readonly tag: Tag;
 }
 
 function isTargeting(value: unknown): value is CardTargeting {
@@ -29,14 +30,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
-function isStringArray(value: unknown): value is readonly string[] {
-  return Array.isArray(value) && value.every((entry) => typeof entry === 'string');
-}
-
 function readCard(value: unknown, position: number): RawCard | string {
   if (!isRecord(value)) return `card ${String(position)} is not an object`;
 
-  const { id, name, class: weightClass, damage, targeting, tags } = value;
+  const { id, name, class: weightClass, damage, targeting, tag } = value;
   if (typeof id !== 'string' || id.length === 0) return `card ${String(position)} has no id`;
   if (typeof name !== 'string' || name.length === 0) return `card "${id}" has no name`;
   if (!isWeightClass(weightClass))
@@ -44,7 +41,10 @@ function readCard(value: unknown, position: number): RawCard | string {
   if (typeof damage !== 'number' || !Number.isFinite(damage) || damage < 0) {
     return `card "${id}" has invalid damage: ${String(damage)}`;
   }
-  if (!isStringArray(tags)) return `card "${id}" has invalid tags`;
+  // The taxonomy is closed (docs/M1_PLAN.md D15), so an unknown tag is a typo
+  // rather than a new tag — and a card the Weave cannot price is a card the
+  // player cannot read before committing (P3). Fail at load, not at combat.
+  if (!isTag(tag)) return `card "${id}" has an unknown tag: ${JSON.stringify(tag)}`;
 
   // Most cards hit one enemy, so the field is written only on the ones that do
   // not (GDD §4.8). Absent means single; a typo'd "aoe" must still fail loudly
@@ -54,7 +54,7 @@ function readCard(value: unknown, position: number): RawCard | string {
     return `card "${id}" has an unknown targeting: ${JSON.stringify(targeting)}`;
   }
 
-  return { id, name, class: weightClass, damage, targeting: reach, tags };
+  return { id, name, class: weightClass, damage, targeting: reach, tag };
 }
 
 function toDefinition(raw: RawCard): CardDefinition {
@@ -69,7 +69,7 @@ function toDefinition(raw: RawCard): CardDefinition {
     recovery: profile.recovery,
     damage: raw.damage,
     targeting: raw.targeting,
-    tags: raw.tags,
+    tag: raw.tag,
   };
 }
 

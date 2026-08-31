@@ -2,6 +2,7 @@ import type { ActorId } from './ids.ts';
 import { actionDelay, effectiveSpeed } from './speed.ts';
 import { speedModifier, type Status, type StatusKind } from './status.ts';
 import type { Tick } from './tick.ts';
+import type { ResistanceTable } from './weave.ts';
 
 export type Side = 'player' | 'enemy';
 
@@ -39,6 +40,13 @@ export interface Actor {
   readonly guard: number;
   /** The single-hit threshold that staggers this actor (GDD §4.6). 0 = immune. */
   readonly poise: number;
+  /**
+   * What this actor shrugs off, per tag (GDD §7.2). It sits on the *actor*
+   * rather than on the encounter because an AoE hits the whole line at once and
+   * each enemy answers for its own resistance — the same reason §4.8 checks
+   * Poise per enemy.
+   */
+  readonly resistances: ResistanceTable;
   /** Staggers landed this encounter, for the diminishing ladder (GDD §4.6). */
   readonly staggersTaken: number;
   readonly statuses: readonly Status[];

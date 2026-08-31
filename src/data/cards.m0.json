@@ -1,21 +1,27 @@
 {
-  "_comment": "Provisional M0 deck (GDD §5.1 [AMD], docs/M0_PLAN.md D1). Not a design commitment: whatever survives the M0 gate is promoted into the GDD as the real skill table. Weight and Recovery are inherited from the class table in GDD §4.1 — a card never states them itself. M0 has three axes and no more: Weight class, damage, and reach. Tags are inert until the Weave lands in M1, so two cards sharing a class and a reach differ only in damage and the smaller one is never worth playing. The catalogue therefore holds one card per (class, reach) and the deck below repeats them.",
+  "_comment": "Provisional M0 deck (GDD §5.1 [AMD], docs/M0_PLAN.md D1), carried into M1 with tags made live. Not a design commitment. Weight and Recovery are inherited from the class table in GDD §4.1 — a card never states them itself. M1 gives the deck its third axis: every card now carries exactly one of the six Weave tags (docs/M1_PLAN.md D15), so the Attunement roll has something to move. The tags are assigned to M0's seven cards rather than re-authored around them, which keeps this file a pure addition — same ids, same damage, same deck — and leaves the M0 golden log byte-identical. The spread that results is inherited, not designed: Physical and Fire carry three deck slots each because M0 repeated Lunge three times, while Shadow and Arcane carry one. Designing it is the job of the real 16-skill table GDD §5.1 still owes, where the tag is chosen with the card instead of after it.",
   "cards": [
-    { "id": "lunge", "name": "Lunge", "class": "light", "damage": 11, "tags": ["Physical"] },
+    {
+      "id": "lunge",
+      "name": "Lunge",
+      "class": "light",
+      "damage": 11,
+      "tag": "Physical"
+    },
     {
       "id": "sweep",
       "name": "Sweep",
       "class": "light",
       "damage": 10,
       "targeting": "all",
-      "tags": ["Physical"]
+      "tag": "Storm"
     },
     {
       "id": "hammerfall",
       "name": "Hammerfall",
       "class": "standard",
       "damage": 16,
-      "tags": ["Physical"]
+      "tag": "Frost"
     },
     {
       "id": "cleave",
@@ -23,16 +29,22 @@
       "class": "standard",
       "damage": 14,
       "targeting": "all",
-      "tags": ["Physical"]
+      "tag": "Fire"
     },
-    { "id": "crush", "name": "Crush", "class": "heavy", "damage": 24, "tags": ["Physical"] },
+    {
+      "id": "crush",
+      "name": "Crush",
+      "class": "heavy",
+      "damage": 24,
+      "tag": "Shadow"
+    },
     {
       "id": "sunder",
       "name": "Sunder",
       "class": "heavy",
       "damage": 22,
       "targeting": "all",
-      "tags": ["Physical"]
+      "tag": "Arcane"
     },
     {
       "id": "cataclysm",
@@ -40,10 +52,10 @@
       "class": "ultimate",
       "damage": 44,
       "targeting": "all",
-      "tags": ["Physical"]
+      "tag": "Fire"
     }
   ],
-  "_deckComment": "Twelve cards, and the same Weight curve the twelve-distinct deck had: five Light, four Standard, two Heavy, one Ultimate. Repeats rather than near-duplicates — a second Lunge is another Lunge, which is honest, where a Strike was a Lunge you would never choose.",
+  "_deckComment": "Twelve cards, and the same Weight curve the twelve-distinct deck had: five Light, four Standard, two Heavy, one Ultimate. Repeats rather than near-duplicates — a second Lunge is another Lunge, which is honest, where a Strike was a Lunge you would never choose. The tag axis is what will eventually make twelve distinct cards honest instead: two Light single-target cards of different tags are two different answers once the Weave moves, which is exactly what M0 had no way to express.",
   "deck": [
     "lunge",
     "lunge",

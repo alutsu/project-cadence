@@ -283,10 +283,17 @@ function skillRow(card: CardDefinition, tallied: CardTally): SkillRow {
 
 /**
  * Cards no better than a sibling. A card sharing another's Weight class and
- * reach inherits its Weight and Recovery from the class table (GDD §4.1) and
- * its tags are inert in M0, so *less damage* leaves nothing to trade back: it
- * is never the right play. It is not a close call to be judged by feel —
- * it is arithmetic, and it is the cheapest balance finding there is.
+ * reach inherits its Weight and Recovery from the class table (GDD §4.1), so
+ * with nothing else to tell them apart *less damage* leaves nothing to trade
+ * back: it is never the right play. Not a close call to be judged by feel —
+ * arithmetic, and the cheapest balance finding there is.
+ *
+ * [M1] The tag is now a third axis (docs/M1_PLAN.md D15), and once the Weave
+ * multiplies it a lower-damage card of a better-placed tag is *not* dominated.
+ * This check does not know that yet, so it will start reporting false positives
+ * the moment two cards share a class and a reach. Nothing in the current
+ * catalogue does, so it is honest today and is rewritten in S8 with the
+ * build-diversity metric — see docs/M1_PLAN.md §4.
  */
 export interface Dominated {
   readonly card: string;

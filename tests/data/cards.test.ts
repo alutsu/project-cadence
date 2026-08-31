@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { m0Catalogue, m0Deck, parseCardCatalogue, parseDeck } from '../../src/data/cards.ts';
+import { TAGS } from '../../src/sim/tag.ts';
 import { WEIGHT_CLASSES } from '../../src/sim/weightClass.ts';
 
-const VALID_CARD = { id: 'strike', name: 'Strike', class: 'light', damage: 9, tags: ['Physical'] };
+const VALID_CARD = { id: 'strike', name: 'Strike', class: 'light', damage: 9, tag: 'Physical' };
 
 describe('card data validation (CLAUDE.md §3.3)', () => {
   it('inherits Weight and Recovery from the class table, never from the card', () => {
@@ -52,7 +53,7 @@ describe('the provisional M0 deck (GDD §5.1 [AMD], plan D1)', () => {
     const buckets = Object.values(catalogue).map((card) => `${card.weightClass}/${card.targeting}`);
 
     // M0 has three axes: Weight class, damage and reach. A class fixes Weight
-    // and Recovery (GDD §4.1) and tags are inert until M1, so two cards sharing
+    // and Recovery (GDD §4.1), so before the Weave lands two cards sharing
     // a class and a reach differ only in damage — and the smaller one is never
     // the right play. One per bucket is the most a non-dominated M0 deck can
     // hold, and this is the test that keeps a thirteenth from creeping back.
@@ -83,5 +84,43 @@ describe('the provisional M0 deck (GDD §5.1 [AMD], plan D1)', () => {
       ok: false,
       errors: ['deck slot 1 names no card: "trebuchet"'],
     });
+  });
+});
+
+/**
+ * docs/M1_PLAN.md D15, D16. The taxonomy is closed, so an unknown tag is a typo
+ * and not an extension — and a card the Weave cannot price is a card the player
+ * cannot read before committing (P3). The deck assertions guard the property the
+ * Attunement roll depends on rather than the particular assignment, which is
+ * inherited from M0 and expected to move at the S8 balance pass.
+ */
+describe('card tags (GDD §7, docs/M1_PLAN.md D15)', () => {
+  it('rejects a tag outside the taxonomy, naming the card', () => {
+    const parsed = parseCardCatalogue({ cards: [{ ...VALID_CARD, tag: 'Radiant' }] });
+
+    expect(parsed.ok).toBe(false);
+    expect(parsed.ok ? [] : parsed.errors).toEqual(['card "strike" has an unknown tag: "Radiant"']);
+  });
+
+  it('rejects the mechanical words §6.2 also calls tags', () => {
+    const parsed = parseCardCatalogue({ cards: [{ ...VALID_CARD, tag: 'Multi' }] });
+
+    expect(parsed.ok).toBe(false);
+  });
+
+  it('gives every card in the catalogue exactly one tag', () => {
+    for (const card of Object.values(m0Catalogue())) {
+      expect(TAGS).toContain(card.tag);
+    }
+  });
+
+  it('spreads the deck over enough tags that an Attunement roll can miss', () => {
+    const catalogue = m0Catalogue();
+    const used = new Set(m0Deck(catalogue).map((id) => catalogue[id]?.tag));
+
+    // §7.1 raises two tags and pushes two down. A deck sitting on four or fewer
+    // tags has no slack: every card moves on every roll, and the choice the
+    // Weave exists to create collapses into a flat rescaling.
+    expect(used.size).toBeGreaterThan(4);
   });
 });

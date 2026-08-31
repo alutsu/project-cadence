@@ -1,4 +1,5 @@
 import type { CardId } from './ids.ts';
+import type { Tag } from './tag.ts';
 import type { Tick } from './tick.ts';
 import type { WeightClass } from './weightClass.ts';
 
@@ -10,9 +11,8 @@ import type { WeightClass } from './weightClass.ts';
 export type CardTargeting = 'single' | 'all';
 
 /**
- * A skill card. Weight and Recovery are ticks (GDD §2 P6, §4.1); damage is flat
- * in M0 — tags exist as labels and multiply nothing until the Weave lands in M1
- * (docs/M0_PLAN.md §2, D9).
+ * A skill card. Weight and Recovery are ticks (GDD §2 P6, §4.1); the tag is
+ * what the Weave multiplies (GDD §7).
  */
 export interface CardDefinition {
   readonly id: CardId;
@@ -23,10 +23,11 @@ export interface CardDefinition {
   readonly damage: number;
   readonly targeting: CardTargeting;
   /**
-   * Inert in M0: tags are labels that multiply nothing until the Weave arrives
-   * in M1 (docs/M0_PLAN.md D9). The taxonomy is authored with it, not before.
+   * Exactly one tag per card (docs/M1_PLAN.md D15). One, not a list: the Weave
+   * asks what a blow *is*, and a card that were two things at once would have
+   * two multipliers and no answer to give the player before they commit (P3).
    */
-  readonly tags: readonly string[];
+  readonly tag: Tag;
 }
 
 /** Cards addressed by id. A plain record, so CombatState stays serializable. */

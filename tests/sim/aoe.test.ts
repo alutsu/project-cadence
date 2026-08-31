@@ -149,7 +149,9 @@ describe('cards that hit the whole line (GDD §4.8)', () => {
 
   it('refuses to load a card whose targeting the data does not recognise', () => {
     const parsed = parseCardCatalogue({
-      cards: [{ id: 'wild', name: 'Wild', class: 'light', damage: 5, targeting: 'aoe', tags: [] }],
+      cards: [
+        { id: 'wild', name: 'Wild', class: 'light', damage: 5, targeting: 'aoe', tag: 'Physical' },
+      ],
     });
 
     expect(parsed.ok).toBe(false);

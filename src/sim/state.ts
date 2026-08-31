@@ -3,6 +3,7 @@ import type { CardCatalogue, CardTargeting } from './card.ts';
 import type { CombatRules } from './rules.ts';
 import type { ActorId, CardId } from './ids.ts';
 import type { Tick } from './tick.ts';
+import type { WeaveSnapshot } from './weave.ts';
 
 export type CombatOutcome = 'ongoing' | 'won' | 'lost';
 
@@ -36,6 +37,13 @@ export interface PendingStrike {
 export interface CombatState {
   readonly now: Tick;
   readonly rules: CombatRules;
+  /**
+   * Where every tag stands this encounter (GDD §7), assembled by the run layer
+   * and carried *in* the state for the reason `rules` gives above: a value the
+   * reducer reads from outside could make two otherwise-identical states behave
+   * differently, and the ghost preview clones the state, not the module.
+   */
+  readonly weave: WeaveSnapshot;
   /** Strikes that have been committed but have not landed yet. */
   readonly pending: readonly PendingStrike[];
   readonly actors: readonly Actor[];

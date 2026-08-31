@@ -38,6 +38,9 @@ export function scaleEnemy(archetype: EnemyArchetype, level: number, id: string)
     baseSpeed: archetype.baseSpeed,
     maxHp: Math.round(archetype.baseHp * (1 + 0.22 * level)),
     poise: Math.round(archetype.basePoise * (1 + 0.12 * level)),
+    // Like Speed, resistance does not scale (GDD §12.1): what an enemy shrugs
+    // off is what it *is*, and a level is how much of it there is.
+    resistances: archetype.resistances,
     intents: archetype.intents.map((intent) => ({
       ...intent,
       damage: Math.round(intent.damage * (1 + 0.16 * level)),

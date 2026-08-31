@@ -1,5 +1,6 @@
 import type { Intent } from '../sim/actor.ts';
 import { tick } from '../sim/tick.ts';
+import { resistTo, type ResistanceTable } from '../sim/weave.ts';
 
 /**
  * Enemy archetypes (GDD §12.2). Three of the fourteen, chosen because between
@@ -16,6 +17,18 @@ export interface EnemyArchetype {
   readonly baseSpeed: number;
   readonly baseHp: number;
   readonly basePoise: number;
+  /**
+   * GDD §7.2, and hand-authored rather than generated: §12.1's generator is
+   * M2's. Speed never scales with level and neither does this — a resistance
+   * that grew would make the Weave a tax on depth rather than a question about
+   * which card to reach for.
+   *
+   * Fire is deliberately unresisted by all three. It is the tag Cataclysm
+   * carries, and leaving one reliable line open means no encounter can become
+   * unwinnable in the sprint that first makes tags matter. It is the first
+   * number to move at the S8 balance pass, not a claim that Fire is special.
+   */
+  readonly resistances: ResistanceTable;
   readonly intents: readonly Intent[];
 }
 
@@ -26,6 +39,9 @@ export const POISON_RAT: EnemyArchetype = {
   baseSpeed: 130,
   baseHp: 34,
   basePoise: 7,
+  // Vermin that lives where the light does not. Light, because this is the
+  // enemy a player meets first and the Weave should not be the lesson.
+  resistances: resistTo({ Shadow: 0.3 }),
   intents: [
     { name: 'Gnaw', weight: tick(4), damage: 2, applies: null },
     {
@@ -45,6 +61,10 @@ export const WARDEN: EnemyArchetype = {
   baseSpeed: 70,
   baseHp: 72,
   basePoise: 20,
+  // Armour. This is the archetype the resistance rule exists for: the Warden is
+  // already the fight you solve rather than out-damage (§12.2), and shrugging
+  // off the deck's most repeated tag pushes the answer off Lunge and Crush.
+  resistances: resistTo({ Physical: 0.4, Frost: 0.2 }),
   intents: [
     { name: 'Ruinous Swing', weight: tick(16), damage: 11, applies: null },
     { name: 'Backhand', weight: tick(6), damage: 3, applies: null },
@@ -58,6 +78,8 @@ export const CHIME_ADEPT: EnemyArchetype = {
   baseSpeed: 115,
   baseHp: 48,
   basePoise: 12,
+  // A thing made of resonance is not moved by a wide arc or a clever one.
+  resistances: resistTo({ Storm: 0.5, Arcane: 0.3 }),
   intents: [
     {
       name: 'Discordant Chime',

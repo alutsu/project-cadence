@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Actor } from '../../src/sim/actor.ts';
 import { actorId } from '../../src/sim/ids.ts';
+import { NO_RESISTANCE } from '../../src/sim/weave.ts';
 import { nextToAct } from '../../src/sim/timeline.ts';
 import { tick } from '../../src/sim/tick.ts';
 
@@ -24,6 +25,7 @@ function actor(spec: ActorSpec): Actor {
     maxHp: 10,
     guard: 0,
     poise: 0,
+    resistances: NO_RESISTANCE,
     staggersTaken: 0,
     statuses: [],
     nextActTick: tick(at),
