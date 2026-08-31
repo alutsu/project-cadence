@@ -4,10 +4,17 @@ import type { Action } from '../sim/actions.ts';
 import {
   absorbEncounter,
   encounterSetup,
+  performForgeAction,
   restartRun,
   startRun,
   type RunState,
 } from '../run/RunState.ts';
+import { FRAMES, type Frame } from '../sim/gem.ts';
+import { ForgeScreen, type ForgeAction } from '../ui/ForgeScreen.ts';
+import { WeavePanel } from '../ui/WeavePanel.ts';
+
+/** Number keys, for picking a card in the forge. */
+const DIGIT_KEYS: readonly string[] = ['ONE', 'TWO', 'THREE', 'FOUR', 'FIVE', 'SIX', 'SEVEN'];
 import { isAlive } from '../sim/actor.ts';
 import type { CardDefinition } from '../sim/card.ts';
 import { advanceToDecision, reduce, startCombat } from '../sim/combat.ts';
@@ -45,6 +52,8 @@ interface CombatViews {
   readonly piles: PilesPanel;
   readonly banner: EncounterBanner;
   readonly tuning: TuningPanel;
+  readonly weave: WeavePanel;
+  readonly forge: ForgeScreen;
   readonly death: DeathScreen;
   readonly fx: CombatFx;
 }
@@ -70,6 +79,9 @@ export class CombatScene extends Phaser.Scene {
    * (GDD §7.3) rather than tracked alongside the fight (CLAUDE.md §2.2).
    */
   private encounterEvents: CombatEvent[] = [];
+  /** What the forge's next act applies to. Presentation state, not game state. */
+  private forgeCard: CardId | null = null;
+  private frameIndex = 0;
   private readonly sfx = new Sfx();
   private opening: Opening = openingState(this.run);
   private state: CombatState = this.opening.state;
@@ -148,6 +160,16 @@ export class CombatScene extends Phaser.Scene {
       piles: new PilesPanel(this),
       banner: new EncounterBanner(this),
       tuning: new TuningPanel(this),
+      weave: new WeavePanel(this),
+      forge: new ForgeScreen({
+        scene: this,
+        onAct: (action) => {
+          this.forgeAct(action);
+        },
+        onClose: () => {
+          this.views?.forge.toggle(this.run);
+        },
+      }),
       // Transient hits sit above the board and below the death screen.
       fx: new CombatFx(this),
       // Built last so it draws over everything it covers.
@@ -266,6 +288,16 @@ export class CombatScene extends Phaser.Scene {
       this.views?.tuning.toggle();
       this.renderAll();
     });
+    // GDD §15.2: the Weave panel is collapsible and always accessible.
+    keys.on('keydown-V', () => {
+      this.views?.weave.toggle();
+      this.renderAll();
+    });
+    keys.on('keydown-F', () => {
+      this.views?.forge.toggle(this.run);
+      this.renderAll();
+    });
+    this.installForgeKeys(keys);
     keys.on('keydown-U', () => {
       this.cycleUltimateRule();
     });
@@ -307,6 +339,57 @@ export class CombatScene extends Phaser.Scene {
       };
       this.restart();
     });
+  }
+
+  /**
+   * The forge's own keys, live only while it is open — the build is made away
+   * from the fight (P5), so its controls do not compete with the fight's.
+   */
+  private installForgeKeys(keys: Phaser.Input.Keyboard.KeyboardPlugin): void {
+    const act = (kind: ForgeAction['kind'], frame: Frame | null = null): void => {
+      const forge = this.views?.forge;
+      if (!forge?.isOpen()) return;
+      forge.act({ kind, card: this.forgeCard, frame, tier: 1 }, this.run);
+      this.renderAll();
+    };
+
+    keys.on('keydown-C', () => {
+      act('craft', FRAMES[this.frameIndex] ?? 'REPEAT');
+    });
+    keys.on('keydown-S', () => {
+      act('socket');
+    });
+    keys.on('keydown-E', () => {
+      act('seat');
+    });
+    keys.on('keydown-X', () => {
+      act('unseat');
+    });
+    keys.on('keydown-R', () => {
+      if (this.views?.forge.isOpen() === true) act('reroll');
+    });
+
+    for (const [index] of FRAMES.entries()) {
+      keys.on(`keydown-${DIGIT_KEYS[index] ?? ''}`, () => {
+        this.pickForgeTarget(index);
+      });
+    }
+  }
+
+  /** Which deck card and which frame the forge's next act applies to. */
+  private pickForgeTarget(index: number): void {
+    if (this.views?.forge.isOpen() !== true) return;
+    const distinct = [...new Set(this.run.deck)];
+    this.forgeCard = distinct[index] ?? this.forgeCard;
+    this.frameIndex = index % FRAMES.length;
+    this.renderAll();
+  }
+
+  /** The run performs the act; the screen only asked for it (CLAUDE.md §4.1). */
+  private forgeAct(action: ForgeAction): void {
+    const performed = performForgeAction(this.run, action);
+    if (performed !== null) this.run = performed;
+    this.renderAll();
   }
 
   private cycleUltimateRule(): void {
@@ -541,6 +624,8 @@ export class CombatScene extends Phaser.Scene {
       animations: this.animations,
       sound: !this.sfx.isMuted(),
     });
+    views.weave.render(this.state, this.currentTarget());
+    views.forge.render(this.run);
     if (this.state.outcome === 'lost') views.death.show(this.deathReport());
     else views.death.hide();
     this.armAutoWait();
@@ -659,6 +744,8 @@ export class CombatScene extends Phaser.Scene {
     views.piles.destroy();
     views.banner.destroy();
     views.tuning.destroy();
+    views.weave.destroy();
+    views.forge.destroy();
     this.input.removeAllListeners();
     this.input.keyboard?.removeAllListeners();
     this.autoWait?.remove();

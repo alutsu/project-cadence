@@ -3,10 +3,10 @@ import type { CardDefinition } from '../sim/card.ts';
 import { findCard } from '../sim/card.ts';
 import { playerActor, type CombatState } from '../sim/state.ts';
 import { actorDelay } from '../sim/actor.ts';
-import type { ActorId } from '../sim/ids.ts';
+import type { ActorId, CardId } from '../sim/ids.ts';
 import { resolveCard } from '../sim/resolve.ts';
 import { damageAgainst } from '../sim/strike.ts';
-import { CardFace } from './CardFace.ts';
+import { CardFace, NO_SOCKET_MARKS, type SocketMarks } from './CardFace.ts';
 import { LAYOUT } from './theme.ts';
 
 export interface HandOptions {
@@ -36,6 +36,21 @@ export function handSeat({ index, count }: HandSeat): { readonly x: number; read
   return {
     x: LAYOUT.width / 2 + fromCenter * (cardWidth + gap),
     y: baselineY + Math.abs(fromCenter) * lift,
+  };
+}
+
+/**
+ * A card's sockets, as marks the face can draw. The frame initial comes from
+ * the gem itself — the view looks nothing up and computes nothing (§2.1).
+ */
+function marksFor(state: CombatState, card: CardId): SocketMarks {
+  const sockets = state.build.sockets[card];
+  if (sockets === undefined) return NO_SOCKET_MARKS;
+
+  return {
+    opened: sockets.opened,
+    filled: sockets.gems.map((id) => state.build.gems[id]?.frame.charAt(0) ?? '●'),
+    scarred: sockets.scarred,
   };
 }
 
@@ -71,6 +86,7 @@ export class Hand {
         damage: damageAgainst(state, card, target),
         weight: resolved.weight,
         recovery: resolved.recovery,
+        sockets: marksFor(state, card.id),
         onPlay: this.options.onPlay,
         onHover: this.options.onHover,
       });

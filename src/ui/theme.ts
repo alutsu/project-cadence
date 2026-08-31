@@ -38,6 +38,11 @@ export const TYPE = {
   enemyHp: '20px',
   hud: '24px',
   button: '26px',
+  /** The Weave panel's numerals. §15.2: numerals, never bars. */
+  weaveRow: '20px',
+  weaveGlyph: '22px',
+  forgeRow: '22px',
+  forgeNote: '17px',
 } as const;
 
 export const LAYOUT = {
@@ -54,6 +59,16 @@ export const LAYOUT = {
    */
   hand: { baselineY: 850, cardWidth: 190, cardHeight: 250, gap: 30, tiltDegrees: 0, lift: 22 },
   piles: { top: 380 },
+  /**
+   * The Weave panel (GDD §15.2) sits under the piles, on the left band that
+   * holds everything the player consults rather than acts on. Collapsible,
+   * because P5 budgets two numbers on screen and six tag rows is not that —
+   * they are there when asked for and folded away when not.
+   */
+  weave: { left: 32, top: 460, rowHeight: 34, width: 300 },
+  /** The forge is a screen of its own, not a panel: the build is made away
+   * from where it is used, so the combat screen keeps its budget (P5). */
+  forge: { top: 150, rowHeight: 56, width: 1180 },
   hud: { margin: 48 },
 } as const;
 

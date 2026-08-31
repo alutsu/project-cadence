@@ -36,8 +36,33 @@ export interface CardFaceOptions {
   readonly weight: number;
   /** Likewise Recovery: HASTE and ECHO both move it (GDD §6.2). */
   readonly recovery: number;
+  /** The card's sockets, and what is in them (GDD §6.1, §6.2). */
+  readonly sockets: SocketMarks;
   readonly onPlay: (card: CardDefinition) => void;
   readonly onHover: (card: CardDefinition | null) => void;
+}
+
+/**
+ * What the card's sockets look like, worked out by the sim side and handed over
+ * as marks. §15.2 forbids encoding meaning in colour alone, so a filled socket
+ * carries its frame's initial rather than merely being a different shade —
+ * "this card has a REPEAT in it" is a mechanical fact the player reads.
+ */
+export interface SocketMarks {
+  readonly opened: number;
+  /** One entry per filled socket, in socket order. Order is meaning (§6.2). */
+  readonly filled: readonly string[];
+  readonly scarred: boolean;
+}
+
+export const NO_SOCKET_MARKS: SocketMarks = { opened: 0, filled: [], scarred: false };
+
+/** GDD §6.1: an empty socket, a filled one, and a card that failed an attempt. */
+export function socketLine(marks: SocketMarks): string {
+  if (marks.opened === 0 && !marks.scarred) return '';
+
+  const pips = Array.from({ length: marks.opened }, (_, at) => marks.filled[at] ?? '○').join(' ');
+  return marks.scarred ? `${pips}  ✕ scarred` : pips;
 }
 
 interface StatColumn {
@@ -96,6 +121,19 @@ export class CardFace {
             fontFamily: FONT,
             fontSize: TYPE.cardStatLabel,
             color: PLAYER_INK,
+          })
+          .setOrigin(0.5, 0.5),
+      );
+    }
+
+    const sockets = socketLine(options.sockets);
+    if (sockets.length > 0) {
+      this.view.add(
+        scene.add
+          .text(0, -cardHeight / 2 + 100, sockets, {
+            fontFamily: FONT,
+            fontSize: TYPE.cardStatLabel,
+            color: options.sockets.scarred ? ENEMY_INK : GUARD_INK,
           })
           .setOrigin(0.5, 0.5),
       );

@@ -17,7 +17,13 @@ import {
 import type { CombatOutcome } from '../sim/state.ts';
 import type { WeaveSnapshot } from '../sim/weave.ts';
 import { rollAttunement, shiftAttunement, type AttunementTable } from './attunement.ts';
-import { grantMaterial, NO_MATERIALS, spendMaterial, type Materials } from './materials.ts';
+import {
+  grantMaterial,
+  NO_MATERIALS,
+  spendMaterial,
+  upgradeMaterial,
+  type Materials,
+} from './materials.ts';
 import { craftGem, REROLL_INSIGHT_COST, rerollValues } from './forge.ts';
 import { attemptSocket, removeGem, seatGem, socketsOf } from './socket.ts';
 
@@ -357,4 +363,53 @@ export function unseat(run: RunState, card: CardId, gem: GemId): ForgeResult<Car
       },
     },
   };
+}
+
+/**
+ * One forge act, performed against the run (GDD §6.1, §6.2).
+ *
+ * The screen asks; the run decides. Returns null when the act could not be
+ * taken, so the caller re-renders unchanged rather than showing something that
+ * did not happen — an illegal act is an expected failure, not an exception
+ * (CLAUDE.md §5.4).
+ */
+export function performForgeAction(
+  run: RunState,
+  action: {
+    readonly kind: 'craft' | 'socket' | 'seat' | 'unseat' | 'reroll' | 'upgrade';
+    readonly card: CardId | null;
+    readonly frame: Frame | null;
+    readonly tier: GemTier;
+  },
+): RunState | null {
+  if (action.kind === 'upgrade')
+    return { ...run, materials: upgradeMaterial(run.materials, action.tier) };
+  if (action.kind === 'craft') {
+    const made = craft(run, { frame: action.frame ?? 'REPEAT', tier: action.tier });
+    return made.ok ? made.run : null;
+  }
+  if (action.kind === 'reroll') {
+    const newest = run.pouch[run.pouch.length - 1];
+    if (newest === undefined) return null;
+    const again = reroll(run, newest);
+    return again.ok ? again.run : null;
+  }
+
+  const card = action.card;
+  if (card === null) return null;
+  if (action.kind === 'socket') {
+    const opened = openSocket(run, card);
+    return opened.ok ? opened.run : null;
+  }
+  if (action.kind === 'seat') {
+    const gem = run.pouch[0];
+    if (gem === undefined) return null;
+    const seated = seat(run, card, gem);
+    return seated.ok ? seated.run : null;
+  }
+
+  const seated = socketsOf(run.build.sockets, card).gems[0];
+  if (seated === undefined) return null;
+  const removed = unseat(run, card, seated);
+  return removed.ok ? removed.run : null;
 }
