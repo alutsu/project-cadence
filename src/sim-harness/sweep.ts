@@ -8,7 +8,8 @@ import {
 } from '../data/encounters.ts';
 import type { ActorSeed } from '../sim/combat.ts';
 import { advanceToDecision, reduce, startCombat } from '../sim/combat.ts';
-import { cardId } from '../sim/ids.ts';
+import type { CombatEvent } from '../sim/events.ts';
+import { cardId, type CardId } from '../sim/ids.ts';
 import { createRng } from '../sim/rng.ts';
 import type { Policy } from './policy.ts';
 import { POLICIES } from './policy.ts';
@@ -17,10 +18,26 @@ import { playerActor } from '../sim/state.ts';
 /** A runaway policy would otherwise hang the sweep; no M0 fight is this long. */
 const DECISION_LIMIT = 400;
 
+/** One decision as the policy saw it: what was offered, and what it took. */
+export interface Offer {
+  readonly hand: readonly CardId[];
+  readonly chosen: CardId | null;
+}
+
 export interface EncounterOutcome {
   readonly won: boolean;
   readonly hp: number;
   readonly decisions: number;
+  /**
+   * The whole log, for the balance report to read. Telemetry off the event log
+   * is what CLAUDE.md §2.2 keeps it append-only and typed for; a harness that
+   * re-derived these numbers from state would be measuring its own arithmetic.
+   */
+  readonly events: readonly CombatEvent[];
+  /** What the hand held at each decision — the denominator for a pick rate. */
+  readonly offers: readonly Offer[];
+  /** The tick the encounter ended on. */
+  readonly ticks: number;
 }
 
 export interface PlaySpec {
@@ -39,13 +56,22 @@ export function playEncounter(spec: PlaySpec): EncounterOutcome {
     rng: createRng(spec.seed, 'combat'),
   });
 
-  let state = advanceToDecision(started.state).state;
+  const opening = advanceToDecision(started.state);
+  const events: CombatEvent[] = [...started.events, ...opening.events];
+  const offers: Offer[] = [];
+  let state = opening.state;
   let decisions = 0;
+
   while (state.outcome === 'ongoing' && state.activeActorId !== null) {
     if (decisions >= DECISION_LIMIT) break;
-    const result = reduce(state, spec.policy(state));
+    const action = spec.policy(state);
+    const result = reduce(state, action);
     if (!result.ok) break;
-    state = advanceToDecision(result.step.state).state;
+
+    offers.push({ hand: state.hand, chosen: action.kind === 'play' ? action.card : null });
+    const advanced = advanceToDecision(result.step.state);
+    events.push(...result.step.events, ...advanced.events);
+    state = advanced.state;
     decisions += 1;
   }
 
@@ -53,6 +79,9 @@ export function playEncounter(spec: PlaySpec): EncounterOutcome {
     won: state.outcome === 'won',
     hp: playerActor(state)?.hp ?? 0,
     decisions,
+    events,
+    offers,
+    ticks: state.now,
   };
 }
 

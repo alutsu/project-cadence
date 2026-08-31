@@ -68,16 +68,27 @@ sound, the sound is compensating for something the strip should be saying.
 them uses Guard or Stagger, so **read every number as a floor a competent human
 should beat**, not as the difficulty itself.
 
-| Policy | reaches |
-|---|---|
-| `leftmost` — plays hand slot 0, always | dies on fight 3, 90% of runs |
-| `greedy` — biggest damage in hand | dies on fight 3, 54% of runs |
-| `tempo` — best damage per tick of Weight | usually dies on fight 5 |
-| `focus` — tempo, and kills the weakest enemy first | usually dies on fight 6 |
+`npm run sim -- --report --seeds 100` adds a per-card and per-enemy breakdown
+underneath, which is what §4's findings below are measured from.
+
+**[2026-08-30, 100 seeds]** Every policy now dies in **fight 3**, on the HP the
+first two left it:
+
+| Policy | clears fight 3 | clears fight 5 |
+|---|---|---|
+| `leftmost` — plays hand slot 0, always | 0% | 0% |
+| `greedy` — biggest expected damage in hand | 0% | 0% |
+| `tempo` — best expected damage per tick of Weight | 4% | 2% |
+| `focus` — tempo, and kills the weakest enemy first | 4% | 3% |
+
+Every one of the six is won 100% of the time *entered at full HP* (fight 6
+excepted, which `focus` wins 56%). The set is not hard; the **chain** is.
 
 The gap between `leftmost` and `focus` is the whole claim under test: choosing
-which card and which target should be worth roughly six fights' difference. If
-play *feels* like it doesn't matter, that is a finding regardless of the table.
+which card and which target should be worth real ground. It is currently worth
+almost none — see §4 — which is a finding about the *chain*, not about choosing.
+If play *feels* like it doesn't matter, that is a finding regardless of the
+table.
 
 ---
 
@@ -163,6 +174,38 @@ deck that can stagger it, and it clears by a single point. Crush (24) and Sunder
 on a 16-tick wind-up, which may be the tension §5 answer 5 already liked or may
 be a fight with one line in it. It is a *scaling* finding, not an AoE one:
 `SOLO_LEVEL` is what put the Warden at 25, and lowering it is the lever.
+
+**[2026-08-30] The chain of three costs more HP than the pool holds.** 100
+seeds, every policy, every encounter: each of the six is won at full HP, and
+every policy still dies in fight 3. The three fights of chain 1 cost roughly 34,
+31 and 33 HP entered fresh — about 98 against a pool of 70 (GDD §5.1). The
+lever is `CHAIN_SIZE`, the encounter levels, or `PLAYER_MAX_HP`; the reading is
+that HP attrition, not any single fight, is what M0 is currently tuned to.
+
+**[2026-08-30] The AoE pass is most of that regression, measured.** Same 100
+seeds with `targeting: "all"` stripped from the three cards and nothing else
+changed:
+
+| clears fight 3 | single-target | AoE |
+|---|---|---|
+| `leftmost` | 13% | 0% |
+| `greedy` | 44% | 0% |
+| `tempo` | 61% | 4% |
+| `focus` | 61% | 4% |
+
+Four of the six encounters field one or two enemies, where 60% reach is a
+straight 40% damage cut and nothing is bought back. Only fight 6 improves
+(`focus` from 58% lost to 44%). That is the trade §4.8 describes working exactly
+as written — it is the *deck*, not the rule, that has three AoE cards in a set
+that is mostly duels.
+
+**[2026-08-30] Nine of the twelve cards are strictly dominated.** Cards in a
+Weight class share Weight and Recovery from the §4.1 table, and M0 tags are
+inert, so within a class and reach only damage differs and the lower number is
+never the right play. Lunge beats every other Light; Hammerfall beats Pin;
+Crush beats Sunder; Cleave beats Sweep. This is the arithmetic behind gate
+answer 6 — the deck reads as variety and plays as four cards. §5.1 [AMD] already
+says the M0 deck is provisional; this is what has to change about it.
 
 These are the numbers the GDD itself flags as guesses. The tuning console exists
 so they can be chased inside the hour rather than between builds.

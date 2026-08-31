@@ -4,6 +4,7 @@ import type { CombatEvent } from '../sim/events.ts';
 import { formatEvent } from './format.ts';
 import { greedyDamage } from './policy.ts';
 import { scenario } from './scenario.ts';
+import { balanceReport } from './balance.ts';
 import { gauntlet, sweep } from './sweep.ts';
 
 /**
@@ -39,16 +40,20 @@ function main(): void {
     options: {
       decisions: { type: 'string' },
       sweep: { type: 'boolean' },
+      report: { type: 'boolean' },
       seeds: { type: 'string' },
     },
   });
 
-  if (values.sweep === true) {
+  if (values.sweep === true || values.report === true) {
     const seeds = values.seeds === undefined ? DEFAULT_SEEDS : Number(values.seeds);
     if (!Number.isInteger(seeds) || seeds <= 0) {
       throw new RangeError(`--seeds must be a positive integer, received ${String(values.seeds)}`);
     }
     process.stdout.write(`${sweep(seeds)}\n${gauntlet(seeds)}\n`);
+    // The balance report is the sweep's numbers broken down by card and by
+    // enemy; asking for it implies asking for the rates it explains.
+    if (values.report === true) process.stdout.write(`\n${balanceReport(seeds)}\n`);
     return;
   }
 
