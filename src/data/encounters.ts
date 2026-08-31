@@ -81,9 +81,18 @@ function adept(level: number, id = 'adept'): ActorSeed {
  * arithmetic collapses: six fights on 70 HP with no heal forces every fight to
  * cost under 12 HP, which is another way of saying no fight may matter.
  *
+ * **Two, not three, and measured.** At three, the first chain's fights cost
+ * about 23, 25 and 27 HP played competently — 75 against a pool of 70 — so the
+ * third fight was lost on arrival however well it was played. It is won 100% of
+ * the time by every policy including `leftmost` when entered at full HP: it was
+ * never a hard encounter, only a third one. At two, every policy clears fights
+ * 1–3 and skill starts separating at fight 4 (`leftmost` 18%, `focus` 100%),
+ * which is where a *feel* test wants the difficulty to bite — the M0 gate
+ * cannot judge six encounters the player never reaches (docs/M0_GATE.md §4).
+ *
  * [M0 STAND-IN] Delete this when the map lands and Sanctums are real nodes.
  */
-export const CHAIN_SIZE = 3;
+export const CHAIN_SIZE = 2;
 
 /** True when this encounter opens a chain, and so is entered at full HP. */
 export function startsChain(index: number): boolean {

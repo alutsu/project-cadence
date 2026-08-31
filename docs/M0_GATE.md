@@ -30,11 +30,11 @@ Six encounters, in order, each isolating one system before the last asks for all
 of them at once. Clearing one advances to the next on a click; dying sends you
 back to the first.
 
-**HP carries between fights** (GDD §4.10), in chains of three with a full
-restore between them — M0's stand-in for §11's Sanctum. The banner names your
-position in the chain and where the next rest is. This is where the pressure
-lives: no individual fight is likely to kill you from full, but the third fight
-of a chain is fought on whatever the first two left you.
+**HP carries between fights** (GDD §4.10), in chains of two with a full restore
+between them — M0's stand-in for §11's Sanctum. The banner names your position
+in the chain and where the next rest is. This is where the pressure lives: no
+individual fight is likely to kill you from full, but the second fight of a
+chain is fought on whatever the first one left you.
 
 | Key | |
 |---|---|
@@ -71,19 +71,19 @@ should beat**, not as the difficulty itself.
 `npm run sim -- --report --seeds 100` adds a per-card and per-enemy breakdown
 underneath, which is what §4's findings below are measured from.
 
-**[2026-08-30, 100 seeds, after the deck re-spread]**
+**[2026-08-30, 100 seeds, after the deck re-spread and `CHAIN_SIZE` 2]**
 
-| Policy | clears fight 3 | clears fight 5 |
-|---|---|---|
-| `leftmost` — plays hand slot 0, always | 0% | 0% |
-| `greedy` — biggest expected damage in hand | 0% | 0% |
-| `tempo` — best expected damage per tick of Weight | 36% | 21% |
-| `focus` — tempo, and kills the weakest enemy first | 36% | 29% |
+| Policy | clears fight 3 | clears fight 4 | clears fight 6 |
+|---|---|---|---|
+| `leftmost` — plays hand slot 0, always | 100% | 18% | 0% |
+| `greedy` — biggest expected damage in hand | 100% | 74% | 0% |
+| `tempo` — best expected damage per tick of Weight | 100% | 99% | 0% |
+| `focus` — tempo, and kills the weakest enemy first | 100% | 100% | 0% |
 
 Every one of the six is won 100% of the time *entered at full HP* (fight 6
-excepted, which `focus` wins 60%). The set is not hard; the **chain** is — and
-`leftmost` now clearing nothing while `tempo` clears a third of the time is the
-widest that gap has been, which is the claim under test.
+excepted, which `focus` wins 60%). Fight 4 is now where skill separates —
+18% against 100% is the widest that gap has been, and it is the claim under
+test. Fight 6 is the ceiling and nothing clears it; see §4.
 
 The gap between `leftmost` and `focus` is the whole claim under test: choosing
 which card and which target should be worth real ground. It is currently worth
@@ -182,6 +182,23 @@ every policy still dies in fight 3. The three fights of chain 1 cost roughly 34,
 31 and 33 HP entered fresh — about 98 against a pool of 70 (GDD §5.1). The
 lever is `CHAIN_SIZE`, the encounter levels, or `PLAYER_MAX_HP`; the reading is
 that HP attrition, not any single fight, is what M0 is currently tuned to.
+
+**[2026-08-30, playtest] "Reaching the third encounter feels impossible to win.
+I tried a lot and passed it only once."** Confirmed, and the encounter was not
+the problem. Fight 3 is won 100% of the time by *every* policy — `leftmost`
+included, which plays hand slot 0 and nothing else — when entered at full HP. It
+cost 27 HP; fights 1 and 2 cost about 23 and 25 before it, so a chain of three
+asked for 75 HP out of a pool of 70. It was lost on arrival however well it was
+played. `CHAIN_SIZE` is now 2, which is the knob the code already marks as the
+M0 stand-in for §11's Sanctum, so nothing published in the GDD moved.
+
+**[2026-08-30] Fight 6 is unwinnable in a gauntlet, and left that way.** Full
+Consort costs about 67 HP entered fresh and `focus` still loses it 40% of the
+time from full; fight 5 costs 41 before it, so no chain arrangement delivers a
+player who can take it. That is the ceiling rather than a wall in the middle,
+and a run that ends at the last fight of the set is a legitimate run end (GDD
+§13). Revisit it if the hour says the finale feels unfair rather than final —
+the levers are the §12.1 levels of its three enemies, not the chain.
 
 **[2026-08-30] The AoE pass is most of that regression, measured.** Same 100
 seeds with `targeting: "all"` stripped from the three cards and nothing else
