@@ -58,7 +58,13 @@ export function importedModules(file: SourceFile): string[] {
   );
 }
 
-const FORBIDDEN_LAYERS = ['ui', 'scenes', 'run'] as const;
+/**
+ * `data` and `platform` join the list on a property that is already true:
+ * a relic table or a boss statline reaching the reducer would invert the
+ * layering GDD §20.1 draws, and `/platform` is where the async, browser-only
+ * things live. Pinning a property while it holds is cheaper than restoring it.
+ */
+const FORBIDDEN_LAYERS = ['ui', 'scenes', 'run', 'data', 'platform'] as const;
 
 /** CLAUDE.md §2.1 / GDD §20.1: /sim imports no engine and no rendering layer. */
 export function forbiddenImports(file: SourceFile): string[] {

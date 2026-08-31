@@ -3,6 +3,7 @@ import {
   craft,
   encounterSetup,
   maxHpFloor,
+  NORMAL_BASE_XP,
   openSocket,
   seat,
   startRun,
@@ -118,6 +119,9 @@ export interface RunOutcome {
   readonly maxHp: number;
   readonly hitFloor: boolean;
   readonly sockets: number;
+  /** Where the §5.1 curve actually got to, and how big the deck grew. */
+  readonly level: number;
+  readonly deck: number;
 }
 
 interface FightResult {
@@ -167,7 +171,12 @@ export function playRun(spec: {
     if (fought.outcome !== 'won') break;
 
     cleared += 1;
-    run = absorbEncounter(run, { outcome: 'won', hp: fought.hp, events: fought.events });
+    run = absorbEncounter(run, {
+      outcome: 'won',
+      hp: fought.hp,
+      events: fought.events,
+      baseXp: NORMAL_BASE_XP,
+    });
   }
 
   const frames = Object.values(run.build.sockets)
@@ -182,6 +191,8 @@ export function playRun(spec: {
     maxHp: run.maxHp,
     hitFloor: run.maxHp <= maxHpFloor(run),
     sockets: Object.values(run.build.sockets).reduce((total, s) => total + s.opened, 0),
+    level: run.level,
+    deck: run.deck.length,
   };
 }
 
@@ -260,6 +271,9 @@ export function diversityOf(outcomes: readonly RunOutcome[]): Diversity {
 /** One line of the table: what this pairing did, averaged over its seeds. */
 function rowFor(builder: string, policy: string, outcomes: readonly RunOutcome[]): string {
   const won = outcomes.filter((outcome) => outcome.won).length;
+  const cleared = outcomes.reduce((total, o) => total + o.cleared, 0) / outcomes.length;
+  const level = outcomes.reduce((total, o) => total + o.level, 0) / outcomes.length;
+  const deck = outcomes.reduce((total, o) => total + o.deck, 0) / outcomes.length;
   const sockets = outcomes.reduce((total, o) => total + o.sockets, 0) / outcomes.length;
   const maxHp = outcomes.reduce((total, o) => total + o.maxHp, 0) / outcomes.length;
   const floored = outcomes.filter((outcome) => outcome.hitFloor).length;
@@ -267,6 +281,9 @@ function rowFor(builder: string, policy: string, outcomes: readonly RunOutcome[]
   return (
     `  ${builder.padEnd(10)} ${policy.padEnd(10)} ` +
     `${percent(won / outcomes.length).padStart(4)}   ` +
+    `${cleared.toFixed(1).padStart(5)}   ` +
+    `${level.toFixed(1).padStart(5)}   ` +
+    `${deck.toFixed(1).padStart(4)}   ` +
     `${sockets.toFixed(1).padStart(5)}   ` +
     `${maxHp.toFixed(0).padStart(6)}   ` +
     percent(floored / outcomes.length).padStart(6)
@@ -283,7 +300,7 @@ export function buildReport(seeds: number): string {
     '',
     `build diversity, ${String(seeds)} seeds per pairing (GDD §19)`,
     '',
-    '  builder    policy      won   sockets   Max HP   at floor',
+    '  builder    policy      won   fights   level   deck   sockets   Max HP   at floor',
   ];
 
   const pairings = BUILDERS.flatMap((builder) => POLICIES.map((policy) => ({ builder, policy })));

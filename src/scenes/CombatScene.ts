@@ -4,6 +4,7 @@ import type { Action } from '../sim/actions.ts';
 import {
   absorbEncounter,
   encounterSetup,
+  NORMAL_BASE_XP,
   performForgeAction,
   restartRun,
   startRun,
@@ -271,6 +272,7 @@ export class CombatScene extends Phaser.Scene {
       outcome: this.state.outcome,
       hp: findActor(this.state, PLAYER)?.hp ?? this.run.hp,
       events: this.encounterEvents,
+      baseXp: NORMAL_BASE_XP,
     });
     this.restart();
   }

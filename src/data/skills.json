@@ -1,0 +1,93 @@
+{
+  "_comment": "GDD §5.1's class skill table, authored at last (docs/M2_PLAN.md D36). Level N grants skill N, always, in order — there is no card selection screen anywhere in the game (P2). The first five are level 1's '4 starters + 1 signature'; the last is level 12's capstone. Weight and Recovery are inherited from the class table in GDD §4.1; a card never states them itself. The seven cards that survived M0 and M1 are kept with their ids, damage and tags intact, so the golden logs and the balance history stay comparable — the nine new ones fill the table out around them. Spread: 6 Light / 5 Standard / 4 Heavy / 1 Ultimate, and 2-3 cards per Weave tag, so an Attunement roll (§7.1) always moves part of the deck and never all of it.",
+  "signature": "cleave",
+  "skills": [
+    { "id": "lunge", "name": "Lunge", "class": "light", "damage": 11, "tag": "Physical" },
+    {
+      "id": "sweep",
+      "name": "Sweep",
+      "class": "light",
+      "damage": 10,
+      "targeting": "all",
+      "tag": "Storm"
+    },
+    { "id": "jab", "name": "Jab", "class": "light", "damage": 9, "tag": "Physical" },
+    { "id": "hammerfall", "name": "Hammerfall", "class": "standard", "damage": 16, "tag": "Frost" },
+    {
+      "id": "cleave",
+      "name": "Cleave",
+      "class": "standard",
+      "damage": 14,
+      "targeting": "all",
+      "tag": "Fire",
+      "applies": { "kind": "burn", "magnitude": 2, "duration": 20 }
+    },
+    { "id": "riposte", "name": "Riposte", "class": "light", "damage": 12, "tag": "Arcane" },
+    {
+      "id": "frostbite",
+      "name": "Frostbite",
+      "class": "light",
+      "damage": 8,
+      "tag": "Frost",
+      "applies": { "kind": "slow", "magnitude": 20, "duration": 16 }
+    },
+    { "id": "crush", "name": "Crush", "class": "heavy", "damage": 24, "tag": "Shadow" },
+    {
+      "id": "gale",
+      "name": "Gale",
+      "class": "standard",
+      "damage": 13,
+      "targeting": "all",
+      "tag": "Storm"
+    },
+    {
+      "id": "ember",
+      "name": "Ember",
+      "class": "light",
+      "damage": 7,
+      "targeting": "all",
+      "tag": "Fire",
+      "applies": { "kind": "burn", "magnitude": 1, "duration": 20 }
+    },
+    {
+      "id": "umbral_cut",
+      "name": "Umbral Cut",
+      "class": "standard",
+      "damage": 17,
+      "tag": "Shadow"
+    },
+    {
+      "id": "sunder",
+      "name": "Sunder",
+      "class": "heavy",
+      "damage": 22,
+      "targeting": "all",
+      "tag": "Arcane"
+    },
+    {
+      "id": "rime",
+      "name": "Rime",
+      "class": "standard",
+      "damage": 15,
+      "tag": "Frost",
+      "applies": { "kind": "slow", "magnitude": 15, "duration": 12 }
+    },
+    {
+      "id": "nightfall",
+      "name": "Nightfall",
+      "class": "heavy",
+      "damage": 20,
+      "targeting": "all",
+      "tag": "Shadow"
+    },
+    { "id": "thunderclap", "name": "Thunderclap", "class": "heavy", "damage": 26, "tag": "Storm" },
+    {
+      "id": "cataclysm",
+      "name": "Cataclysm",
+      "class": "ultimate",
+      "damage": 44,
+      "targeting": "all",
+      "tag": "Fire"
+    }
+  ]
+}

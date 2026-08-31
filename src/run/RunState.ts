@@ -1,9 +1,18 @@
-import { CHAIN_SIZE, ENCOUNTERS, PLAYER, PLAYER_MAX_HP, startsChain } from '../data/encounters.ts';
-import { m0Catalogue, m0Deck } from '../data/cards.ts';
+import { CHAIN_SIZE, ENCOUNTERS, PLAYER, startsChain } from '../data/encounters.ts';
+import { deckAtLevel, skillTable, type SkillTable } from '../data/skills.ts';
+import {
+  bankXp,
+  enemyLevel,
+  maxHpAtLevel,
+  MAX_HP_PER_LEVEL,
+  STARTING_LEVEL,
+  THREAT_PER_NODE,
+  xpAwarded,
+} from '../sim/level.ts';
 import type { CombatSetup } from '../sim/combat.ts';
 import type { CombatEvent } from '../sim/events.ts';
 import { type BuildState, type Frame, type GemTier } from '../sim/gem.ts';
-import { cardId, type CardId, type GemId } from '../sim/ids.ts';
+import type { CardId, GemId } from '../sim/ids.ts';
 import { createRng, restoreRng, type Rng, type RngState, type RngStreamName } from '../sim/rng.ts';
 import { DEFAULT_RULES, ULTIMATE_KILL_INSIGHT, type CombatRules } from '../sim/rules.ts';
 import {
@@ -54,6 +63,12 @@ export const MAX_HP_FLOOR_SHARE = 0.4;
 export interface RunState {
   readonly seed: number;
   readonly encounterIndex: number;
+  /** GDD §5.1. Grants a skill and +6 Max HP; the deck follows from it. */
+  readonly level: number;
+  /** Banked toward the next level (GDD §5.2). */
+  readonly xp: number;
+  /** GDD §5.3: every dungeon node entered raises it, pushing enemies up. */
+  readonly threat: number;
   readonly hp: number;
   readonly maxHp: number;
   /**
@@ -112,13 +127,16 @@ export function startRun(seed: number): RunState {
   return {
     seed,
     encounterIndex: 0,
-    hp: PLAYER_MAX_HP,
-    maxHp: PLAYER_MAX_HP,
-    baselineMaxHp: PLAYER_MAX_HP,
+    level: STARTING_LEVEL,
+    xp: 0,
+    threat: 0,
+    hp: maxHpAtLevel(STARTING_LEVEL),
+    maxHp: maxHpAtLevel(STARTING_LEVEL),
+    baselineMaxHp: maxHpAtLevel(STARTING_LEVEL),
     attunement,
     saturation: NO_HISTORY,
     build: OPENING_BUILD,
-    deck: m0Deck(),
+    deck: deckAtLevel(SKILLS, STARTING_LEVEL),
     materials: NO_MATERIALS,
     insight: 0,
     pouch: [],
@@ -152,7 +170,7 @@ export function encounterSetup(run: RunState): CombatSetup {
     actors: encounter.actors.map((actor) =>
       actor.side === 'player' ? { ...actor, hp: run.hp, maxHp: run.maxHp } : actor,
     ),
-    catalogue: m0Catalogue(),
+    catalogue: SKILLS.catalogue,
     deck: run.deck,
     // One stream position per encounter, so replaying a fight replays its
     // shuffle (GDD §20.2) without the run's other systems shifting under it.
@@ -167,10 +185,60 @@ export interface EncounterResult {
   readonly outcome: CombatOutcome;
   readonly hp: number;
   readonly events: readonly CombatEvent[];
+  /** What the encounter was worth before §5.2's level scaling. */
+  readonly baseXp: number;
+}
+
+/** [M2 STAND-IN] §11's Depths set this; the encounter chain stands in (D21). */
+function depthBase(run: RunState): number {
+  return depthOf(run) - 1;
 }
 
 /**
- * [M1 STAND-IN] GDD §9's ledger is M2's; this is the least that makes §6 real.
+ * XP banked, and everything a level brings with it (GDD §5.1).
+ *
+ * A level grants a skill *and* +6 Max HP, and the two arrive together: the deck
+ * is re-derived from the authored order rather than appended to, because §5.1
+ * makes the deck a function of the level and not a list that accumulates.
+ *
+ * The Max HP gain is added to both the pool and the §6.1 baseline. The baseline
+ * is what the socket floor is 40% of, so a level genuinely widens the room a
+ * build has to spend — which is the whole reason §5.1 [FIX] made HP grow.
+ */
+function levelUp(run: RunState, award: { baseXp: number; enemyLevel: number }): RunState {
+  const gained = xpAwarded({
+    baseXp: award.baseXp,
+    enemyLevel: award.enemyLevel,
+    playerLevel: run.level,
+  });
+  const progress = bankXp({ level: run.level, xp: run.xp }, gained);
+  const levels = progress.level - run.level;
+  if (levels <= 0) return { ...run, xp: progress.xp };
+
+  const grown = levels * MAX_HP_PER_LEVEL;
+  return {
+    ...run,
+    level: progress.level,
+    xp: progress.xp,
+    maxHp: run.maxHp + grown,
+    baselineMaxHp: run.baselineMaxHp + grown,
+    // A level heals nothing by itself (§5.1 grants a pool, not a refill), but
+    // the wound cannot exceed the pool it sits in.
+    hp: Math.min(run.hp + grown, run.maxHp + grown),
+    deck: deckAtLevel(SKILLS, progress.level),
+  };
+}
+
+/**
+ * [M2 STAND-IN] What a normal encounter is worth before §5.2 scales it. §9's
+ * table says only "base"; the number is tuned against §5.1's curve so a full
+ * run reaches somewhere near the cap (docs/M2_PLAN.md D42).
+ */
+export const NORMAL_BASE_XP = 10;
+
+/**
+ * [M1 STAND-IN] GDD §9's ledger arrives with the Market; this is the least
+ * that makes §6 real.
  *
  * Tuned toward §9's stated run totals — 5–7 sockets opened, 4–6 gems crafted —
  * so the gate reads a realistic build rather than an abundant one
@@ -189,7 +257,10 @@ export const INSIGHT_EVERY = 2;
  * exists the signature is a Standard card, so the free socket sits on something
  * the player actually reaches for (docs/M1_PLAN.md D30).
  */
-export const SIGNATURE_CARD = cardId('cleave');
+export const SKILLS: SkillTable = skillTable();
+
+/** GDD §5.1's signature, read from the table rather than named twice. */
+export const SIGNATURE_CARD: CardId = SKILLS.signature;
 
 const OPENING_BUILD: BuildState = {
   gems: {},
@@ -216,13 +287,22 @@ export function absorbEncounter(run: RunState, result: EncounterResult): RunStat
   const nextIndex = run.encounterIndex + 1;
   const rested = startsChain(nextIndex);
 
+  // GDD §5.2, §5.3. The level a fight was worth is the level of what was in
+  // it, which §5.3 ties to Threat — so farming pushes enemies past you rather
+  // than behind you, and the XP clamp stops it paying either way.
+  const grown = levelUp(run, {
+    baseXp: result.baseXp,
+    enemyLevel: enemyLevel(depthBase(run), run.threat),
+  });
+
   const banked: RunState = {
-    ...run,
+    ...grown,
     encounterIndex: nextIndex,
+    threat: run.threat + THREAT_PER_NODE,
     // GDD §4.10: the wound carries. The chain boundary is M0's stand-in for a
     // Sanctum, and restoring to Max HP is what makes the socket cost bite —
     // it lowers the ceiling you are restored to, permanently.
-    hp: rested ? run.maxHp : Math.min(result.hp, run.maxHp),
+    hp: rested ? grown.maxHp : Math.min(result.hp, grown.maxHp),
     saturation: recordEncounter(run.saturation, dominant),
     materials: grantMaterial(run.materials, CLEAR_MATERIAL_TIER),
     insight: run.insight + (nextIndex % INSIGHT_EVERY === 0 ? 1 : 0) + paid,
@@ -245,7 +325,7 @@ export function absorbEncounter(run: RunState, result: EncounterResult): RunStat
  * one for an AoE that clears a line in one swing.
  */
 function ultimateKills(events: readonly CombatEvent[]): number {
-  const catalogue = m0Catalogue();
+  const catalogue = SKILLS.catalogue;
   let credited = false;
   let kills = 0;
 

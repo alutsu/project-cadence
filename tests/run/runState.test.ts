@@ -5,12 +5,25 @@ import {
   depthOf,
   encounterSetup,
   maxHpFloor,
+  NORMAL_BASE_XP,
+  openSocket,
+  SIGNATURE_CARD,
   startRun,
   weaveSnapshot,
   type EncounterResult,
   type RunState,
 } from '../../src/run/RunState.ts';
 import { rollAttunement, shiftAttunement } from '../../src/run/attunement.ts';
+import { deckAtLevel, skillTable } from '../../src/data/skills.ts';
+import {
+  bankXp,
+  deckSizeAtLevel,
+  enemyLevel,
+  MAX_HP_PER_LEVEL,
+  MAX_LEVEL,
+  maxHpAtLevel,
+  xpAwarded,
+} from '../../src/sim/level.ts';
 import type { CombatEvent } from '../../src/sim/events.ts';
 import { cardId, type CardId } from '../../src/sim/ids.ts';
 import { createRng } from '../../src/sim/rng.ts';
@@ -36,7 +49,7 @@ function blow(tag: Tag, amount: number): CombatEvent {
 }
 
 function clear(run: RunState, events: readonly CombatEvent[]): RunState {
-  const result: EncounterResult = { outcome: 'won', hp: run.hp, events };
+  const result: EncounterResult = { outcome: 'won', hp: run.hp, events, baseXp: NORMAL_BASE_XP };
   return absorbEncounter(run, result);
 }
 
@@ -160,22 +173,43 @@ describe('Saturation follows the damage, not the intent (GDD §7.3)', () => {
 describe('the run carries a wound, and rests between chains (GDD §4.10)', () => {
   it('takes the surviving HP into the next fight of a chain', () => {
     const run = startRun(9);
-    const wounded = absorbEncounter(run, { outcome: 'won', hp: 40, events: [] });
+    const wounded = absorbEncounter(run, {
+      outcome: 'won',
+      hp: 40,
+      events: [],
+      baseXp: NORMAL_BASE_XP,
+    });
 
     expect(wounded.hp).toBe(40);
   });
 
-  it('restores to Max HP at a chain boundary, not to the baseline', () => {
+  it('restores to the run’s own Max HP at a chain boundary, whatever it is', () => {
+    // Deliberately not a literal. A socket lowers Max HP (§6.1) and a level
+    // raises it (§5.1), so the only stable statement is that a rest fills the
+    // pool the run currently has — which is the rule §4.10 actually states.
     const run: RunState = { ...startRun(9), maxHp: 58, hp: 12 };
-    const first = absorbEncounter(run, { outcome: 'won', hp: 12, events: [] });
-    const second = absorbEncounter(first, { outcome: 'won', hp: 8, events: [] });
+    const first = absorbEncounter(run, {
+      outcome: 'won',
+      hp: 12,
+      events: [],
+      baseXp: NORMAL_BASE_XP,
+    });
+    const second = absorbEncounter(first, {
+      outcome: 'won',
+      hp: 8,
+      events: [],
+      baseXp: NORMAL_BASE_XP,
+    });
 
-    expect(second.hp).toBe(58);
+    expect(second.hp).toBe(second.maxHp);
+    expect(second.maxHp).toBeGreaterThanOrEqual(58);
   });
 
   it('does not advance a run that was lost', () => {
     const run = startRun(9);
-    expect(absorbEncounter(run, { outcome: 'lost', hp: 0, events: [] })).toBe(run);
+    expect(
+      absorbEncounter(run, { outcome: 'lost', hp: 0, events: [], baseXp: NORMAL_BASE_XP }),
+    ).toBe(run);
   });
 });
 
@@ -224,21 +258,108 @@ describe('an Ultimate that kills can pay Insight (GDD §22 Q1)', () => {
   it('pays nothing under the rules that do not promise it', () => {
     const run = startRun(2);
     expect(
-      absorbEncounter(run, { outcome: 'won', hp: 50, events: killWith(cataclysm) }).insight,
+      absorbEncounter(run, {
+        outcome: 'won',
+        hp: 50,
+        events: killWith(cataclysm),
+        baseXp: NORMAL_BASE_XP,
+      }).insight,
     ).toBe(run.insight);
   });
 
   it('pays for a kill the Ultimate landed', () => {
     const run: RunState = { ...startRun(2), rules: { ...startRun(2).rules, ultimate: 'insight' } };
-    const after = absorbEncounter(run, { outcome: 'won', hp: 50, events: killWith(cataclysm) });
+    const after = absorbEncounter(run, {
+      outcome: 'won',
+      hp: 50,
+      events: killWith(cataclysm),
+      baseXp: NORMAL_BASE_XP,
+    });
 
     expect(after.insight).toBe(run.insight + 1);
   });
 
   it('pays nothing for a kill any other card landed', () => {
     const run: RunState = { ...startRun(2), rules: { ...startRun(2).rules, ultimate: 'insight' } };
-    const after = absorbEncounter(run, { outcome: 'won', hp: 50, events: killWith(lunge) });
+    const after = absorbEncounter(run, {
+      outcome: 'won',
+      hp: 50,
+      events: killWith(lunge),
+      baseXp: NORMAL_BASE_XP,
+    });
 
     expect(after.insight).toBe(run.insight);
+  });
+});
+
+/**
+ * GDD §5.1–5.3. The published table is the contract: a level grants a skill and
+ * +6 Max HP, and the deck is a *function* of the level rather than a list that
+ * accumulates — so it can be re-derived rather than maintained.
+ */
+describe('levels, XP and Threat (GDD §5.1–5.3)', () => {
+  it('matches §5.1s published Max HP column exactly', () => {
+    expect(maxHpAtLevel(1)).toBe(70);
+    expect(maxHpAtLevel(12)).toBe(136);
+    expect(deckSizeAtLevel(1)).toBe(5);
+    expect(deckSizeAtLevel(12)).toBe(16);
+  });
+
+  it('grants the deck the level says, in the authored order (§5.1)', () => {
+    const table = skillTable();
+    expect(deckAtLevel(table, 1)).toHaveLength(5);
+    expect(deckAtLevel(table, 12)).toHaveLength(16);
+    // Level N grants skill N in order, so a level's deck is a prefix of the next.
+    expect(deckAtLevel(table, 6).slice(0, deckSizeAtLevel(5))).toEqual(deckAtLevel(table, 5));
+  });
+
+  it('opens the run with the signature in hand, per §6.1', () => {
+    expect(deckAtLevel(skillTable(), 1)).toContain(SIGNATURE_CARD);
+  });
+
+  it('applies §5.2s clamp at both ends', () => {
+    const base = 100;
+    // Far below your level pays the 0.10 floor; far above pays the 1.80 cap.
+    expect(xpAwarded({ baseXp: base, enemyLevel: 0, playerLevel: 40 })).toBe(10);
+    expect(xpAwarded({ baseXp: base, enemyLevel: 40, playerLevel: 0 })).toBe(180);
+    expect(xpAwarded({ baseXp: base, enemyLevel: 3, playerLevel: 3 })).toBe(100);
+  });
+
+  it('never skips a level, however much XP arrives at once (§5.1)', () => {
+    // A level hands over a skill, so two levels cannot arrive as one.
+    const jumped = bankXp({ level: 1, xp: 0 }, 10_000);
+    expect(jumped.level).toBe(MAX_LEVEL);
+  });
+
+  it('grows Max HP and the §6.1 baseline together, without refunding a socket', () => {
+    const run = startRun(31);
+    const socketed = openSocket(run, SIGNATURE_CARD);
+    if (!socketed.ok) throw new Error(socketed.reason);
+    expect(run.maxHp - socketed.run.maxHp).toBeGreaterThan(0);
+
+    // Cleared until at least one level has landed — the point is what a level
+    // does to a pool that has already been spent from, not how fast it arrives.
+    let levelled = socketed.run;
+    while (levelled.level === socketed.run.level) levelled = clear(levelled, []);
+    const gained = (levelled.level - socketed.run.level) * MAX_HP_PER_LEVEL;
+
+    // §5.1 [FIX]: the gain widens the pool, and the HP already spent on a
+    // socket stays spent — a level must never refund one (§6.1).
+    expect(levelled.maxHp).toBe(socketed.run.maxHp + gained);
+    expect(levelled.maxHp).toBeLessThan(maxHpAtLevel(levelled.level));
+    expect(levelled.baselineMaxHp).toBe(run.baselineMaxHp + gained);
+    expect(maxHpFloor(levelled)).toBeGreaterThan(maxHpFloor(run));
+  });
+
+  it('raises Threat per node, so enemies climb to meet you (§5.3)', () => {
+    let run = startRun(31);
+    const before = run.threat;
+    run = clear(run, []);
+
+    expect(run.threat).toBe(before + 1);
+    // enemy_level = depth_base + floor(Threat / 2)
+    expect(enemyLevel(0, 0)).toBe(0);
+    expect(enemyLevel(0, 3)).toBe(1);
+    expect(enemyLevel(2, 5)).toBe(4);
   });
 });
