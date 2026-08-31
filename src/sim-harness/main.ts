@@ -6,6 +6,7 @@ import { greedyDamage } from './policy.ts';
 import { scenario } from './scenario.ts';
 import { balanceReport } from './balance.ts';
 import { gauntlet, sweep } from './sweep.ts';
+import { buildReport } from './builds.ts';
 
 /**
  * Headless driver (GDD §19, CLAUDE.md §7.3). S1 runs one scripted encounter and
@@ -41,9 +42,19 @@ function main(): void {
       decisions: { type: 'string' },
       sweep: { type: 'boolean' },
       report: { type: 'boolean' },
+      builds: { type: 'boolean' },
       seeds: { type: 'string' },
     },
   });
+
+  if (values.builds === true) {
+    const seeds = values.seeds === undefined ? DEFAULT_SEEDS : Number(values.seeds);
+    if (!Number.isInteger(seeds) || seeds <= 0) {
+      throw new RangeError(`--seeds must be a positive integer, received ${String(values.seeds)}`);
+    }
+    console.log(buildReport(seeds));
+    return;
+  }
 
   if (values.sweep === true || values.report === true) {
     const seeds = values.seeds === undefined ? DEFAULT_SEEDS : Number(values.seeds);

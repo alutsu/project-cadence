@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { PLAYER } from '../../src/data/encounters.ts';
+import { PLAYER, RAT } from '../../src/data/encounters.ts';
 import {
   absorbEncounter,
   depthOf,
@@ -12,6 +12,7 @@ import {
 } from '../../src/run/RunState.ts';
 import { rollAttunement, shiftAttunement } from '../../src/run/attunement.ts';
 import type { CombatEvent } from '../../src/sim/events.ts';
+import { cardId, type CardId } from '../../src/sim/ids.ts';
 import { createRng } from '../../src/sim/rng.ts';
 import { SATURATION_CAP, saturationOf } from '../../src/sim/saturation.ts';
 import { TAGS, type Tag } from '../../src/sim/tag.ts';
@@ -201,5 +202,43 @@ describe('what the run hands to combat', () => {
   it('states the §6.1 Max HP floor as an absolute number', () => {
     // 40% of the 70 baseline (docs/M1_PLAN.md D18).
     expect(maxHpFloor(startRun(1))).toBe(28);
+  });
+});
+
+/**
+ * GDD §22 Q1 candidate (b). M0 could not judge it — docs/M0_GATE.md §3 records
+ * that there was no Insight system to reward — so it is built here and settled
+ * at M1's gate (docs/M1_PLAN.md D25).
+ */
+describe('an Ultimate that kills can pay Insight (GDD §22 Q1)', () => {
+  const cataclysm = cardId('cataclysm');
+  const lunge = cardId('lunge');
+
+  function killWith(card: CardId): readonly CombatEvent[] {
+    return [
+      { kind: 'card_played', at: tick(1), actor: PLAYER, card, weight: tick(16) },
+      { kind: 'actor_died', at: tick(1), actor: RAT },
+    ];
+  }
+
+  it('pays nothing under the rules that do not promise it', () => {
+    const run = startRun(2);
+    expect(
+      absorbEncounter(run, { outcome: 'won', hp: 50, events: killWith(cataclysm) }).insight,
+    ).toBe(run.insight);
+  });
+
+  it('pays for a kill the Ultimate landed', () => {
+    const run: RunState = { ...startRun(2), rules: { ...startRun(2).rules, ultimate: 'insight' } };
+    const after = absorbEncounter(run, { outcome: 'won', hp: 50, events: killWith(cataclysm) });
+
+    expect(after.insight).toBe(run.insight + 1);
+  });
+
+  it('pays nothing for a kill any other card landed', () => {
+    const run: RunState = { ...startRun(2), rules: { ...startRun(2).rules, ultimate: 'insight' } };
+    const after = absorbEncounter(run, { outcome: 'won', hp: 50, events: killWith(lunge) });
+
+    expect(after.insight).toBe(run.insight);
   });
 });

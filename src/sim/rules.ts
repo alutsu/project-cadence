@@ -7,9 +7,9 @@ import { tick, type Tick } from './tick.ts';
  * cannot make two otherwise-identical states behave differently — tuning stays
  * deterministic and a saved encounter still replays (GDD §20.2).
  */
-export type UltimateRule = 'immediate' | 'windup' | 'refund';
+export type UltimateRule = 'immediate' | 'windup' | 'refund' | 'insight';
 
-export const ULTIMATE_RULES: readonly UltimateRule[] = ['immediate', 'windup', 'refund'];
+export const ULTIMATE_RULES: readonly UltimateRule[] = ['immediate', 'windup', 'refund', 'insight'];
 
 export interface CombatRules {
   /** GDD §22, open question 1. See ULTIMATE_RULE_NOTES. */
@@ -37,7 +37,14 @@ export const ULTIMATE_RULE_NOTES: Readonly<Record<UltimateRule, string>> = {
   immediate: 'baseline — Weight 16 up front',
   windup: 'commit now, lands later, keep acting',
   refund: 'up front, half back on a kill',
+  // GDD §22 Q1 candidate (b). M0 could not test it — there was no Insight
+  // system to reward — and docs/M0_GATE.md §3 says so explicitly. There is one
+  // now, so the candidate finally has a meaning (docs/M1_PLAN.md D25).
+  insight: 'up front, and a kill pays Insight',
 };
+
+/** GDD §22 Q1 candidate (b): what an Ultimate kill is worth, in Insight. */
+export const ULTIMATE_KILL_INSIGHT = 1;
 
 /** The wind-up variant leaves the player free again after this much Weight. */
 export const WINDUP_COMMIT_WEIGHT: Tick = tick(4);

@@ -5,7 +5,7 @@ import type { CombatEvent } from '../sim/events.ts';
 import { type BuildState, type Frame, type GemTier } from '../sim/gem.ts';
 import { cardId, type CardId, type GemId } from '../sim/ids.ts';
 import { createRng, restoreRng, type Rng, type RngState, type RngStreamName } from '../sim/rng.ts';
-import { DEFAULT_RULES, type CombatRules } from '../sim/rules.ts';
+import { DEFAULT_RULES, ULTIMATE_KILL_INSIGHT, type CombatRules } from '../sim/rules.ts';
 import {
   attributeDamage,
   dominantTag,
@@ -208,6 +208,11 @@ export function absorbEncounter(run: RunState, result: EncounterResult): RunStat
   if (result.outcome !== 'won') return run;
 
   const dominant = dominantTag(attributeDamage(result.events, PLAYER));
+  // GDD §22 Q1 candidate (b): an Ultimate that finishes something pays for
+  // itself in Insight. Counted from the log by the run layer rather than
+  // granted by the reducer, because Insight is run-scoped and /sim cannot
+  // reach it (docs/M1_PLAN.md D25).
+  const paid = run.rules.ultimate === 'insight' ? ultimateKills(result.events) : 0;
   const nextIndex = run.encounterIndex + 1;
   const rested = startsChain(nextIndex);
 
@@ -220,7 +225,7 @@ export function absorbEncounter(run: RunState, result: EncounterResult): RunStat
     hp: rested ? run.maxHp : Math.min(result.hp, run.maxHp),
     saturation: recordEncounter(run.saturation, dominant),
     materials: grantMaterial(run.materials, CLEAR_MATERIAL_TIER),
-    insight: run.insight + (nextIndex % INSIGHT_EVERY === 0 ? 1 : 0),
+    insight: run.insight + (nextIndex % INSIGHT_EVERY === 0 ? 1 : 0) + paid,
   };
 
   // GDD §7.1: one Ascendant and one Suppressed slot re-roll at the start of
@@ -230,6 +235,29 @@ export function absorbEncounter(run: RunState, result: EncounterResult): RunStat
 
   const shifted = draw(banked, 'weave', (rng) => shiftAttunement(rng, banked.attunement));
   return { ...banked, attunement: shifted.value, streams: shifted.streams };
+}
+
+/**
+ * Kills an Ultimate landed, read off the log (GDD §22 Q1 candidate b).
+ *
+ * An Ultimate is credited with everything that dies before the player's next
+ * card — the same attribution window the balance ledger uses, and the honest
+ * one for an AoE that clears a line in one swing.
+ */
+function ultimateKills(events: readonly CombatEvent[]): number {
+  const catalogue = m0Catalogue();
+  let credited = false;
+  let kills = 0;
+
+  for (const event of events) {
+    if (event.kind === 'card_played') {
+      credited = catalogue[event.card]?.weightClass === 'ultimate';
+      continue;
+    }
+    if (event.kind === 'actor_died' && credited) kills += ULTIMATE_KILL_INSIGHT;
+  }
+
+  return kills;
 }
 
 /** A run that ended. Nothing carries between runs (GDD §9). */

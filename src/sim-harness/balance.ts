@@ -288,12 +288,12 @@ function skillRow(card: CardDefinition, tallied: CardTally): SkillRow {
  * back: it is never the right play. Not a close call to be judged by feel —
  * arithmetic, and the cheapest balance finding there is.
  *
- * [M1] The tag is now a third axis (docs/M1_PLAN.md D15), and once the Weave
- * multiplies it a lower-damage card of a better-placed tag is *not* dominated.
- * This check does not know that yet, so it will start reporting false positives
- * the moment two cards share a class and a reach. Nothing in the current
- * catalogue does, so it is honest today and is rewritten in S8 with the
- * build-diversity metric — see docs/M1_PLAN.md §4.
+ * [M1] The tag is the third axis (docs/M1_PLAN.md D15), and it is what makes
+ * two otherwise-identical cards different: a lower-damage card of a
+ * better-placed tag is not dominated, it is a different answer to a question
+ * the run has not asked yet. Domination therefore requires the same tag as
+ * well as the same class and reach — anything else is a comparison the Weave
+ * can overturn between one Depth and the next.
  */
 export interface Dominated {
   readonly card: string;
@@ -314,6 +314,7 @@ export function dominatedCards(): readonly Dominated[] {
           (other) =>
             other.weightClass === card.weightClass &&
             other.targeting === card.targeting &&
+            other.tag === card.tag &&
             damagePerTarget(other) > damagePerTarget(card),
         )
         .map((other) => other.name),
