@@ -42,7 +42,14 @@ import {
   type Materials,
 } from './materials.ts';
 import { craftGem, REROLL_INSIGHT_COST, rerollValues } from './forge.ts';
-import { attemptSocket, removeGem, seatGem, socketsOf } from './socket.ts';
+import {
+  attemptSocket,
+  removeGem,
+  seatGem,
+  socketRefusal,
+  socketsOf,
+  type SocketRefusal,
+} from './socket.ts';
 
 /**
  * Everything that outlives a single fight (GDD §5, §7, §9).
@@ -154,6 +161,26 @@ export function startRun(seed: number): RunState {
     rules: DEFAULT_RULES,
     streams: { ...freshStreams(seed), weave: weave.state(), map: map.state() },
   };
+}
+
+/** What a rest would restore (GDD §11). The view is not allowed to subtract. */
+export function missingHp(run: RunState): number {
+  return Math.max(0, run.maxHp - run.hp);
+}
+
+/** Whether any card in the deck could take another socket right now (§6.1). */
+export function canOpenAnySocket(run: RunState): boolean {
+  return [...new Set(run.deck)].some((card) => socketRefusalFor(run, card) === null);
+}
+
+/** §6.1's own refusal, for one card. The single place the rules are read. */
+export function socketRefusalFor(run: RunState, card: CardId): SocketRefusal | null {
+  return socketRefusal({
+    sockets: socketsOf(run.build.sockets, card),
+    maxHp: run.maxHp,
+    floor: maxHpFloor(run),
+    insight: run.insight,
+  });
 }
 
 /** GDD §6.1's floor, in absolute terms. */

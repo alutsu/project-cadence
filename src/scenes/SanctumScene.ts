@@ -51,7 +51,7 @@ export class SanctumScene extends Phaser.Scene {
         payload.dispatch({ kind: 'rest' });
       },
       onForge: () => {
-        this.forge?.toggle(this.run());
+        this.forge?.toggle();
         this.render();
       },
       onLeave: () => {
@@ -64,7 +64,7 @@ export class SanctumScene extends Phaser.Scene {
         this.act(action);
       },
       onClose: () => {
-        this.forge?.toggle(this.run());
+        this.forge?.toggle();
         this.render();
       },
     });
@@ -107,7 +107,7 @@ export class SanctumScene extends Phaser.Scene {
     };
 
     keys.on('keydown-F', () => {
-      this.forge?.toggle(this.run());
+      this.forge?.toggle();
       this.render();
     });
     keys.on('keydown-C', () => {
@@ -150,7 +150,7 @@ export class SanctumScene extends Phaser.Scene {
     if (this.payload?.view.kind !== 'sanctum') return;
 
     this.view?.render(this.run());
-    this.forge?.render(this.run());
+    this.forge?.render(this.run(), this.card, FRAMES[this.frameIndex] ?? 'REPEAT');
   }
 }
 

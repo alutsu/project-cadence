@@ -68,7 +68,7 @@ export const LAYOUT = {
   weave: { left: 32, top: 460, rowHeight: 34, width: 300 },
   /** The forge is a screen of its own, not a panel: the build is made away
    * from where it is used, so the combat screen keeps its budget (P5). */
-  forge: { top: 150, rowHeight: 56, width: 1180 },
+  forge: { top: 250, rowHeight: 56, width: 1180 },
   /** The map screen (GDD §11): four node cards in a row, and what you carry. */
   map: {
     headingY: 200,
