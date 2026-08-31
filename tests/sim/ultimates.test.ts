@@ -9,6 +9,8 @@ import { findActor, type CombatState } from '../../src/sim/state.ts';
 
 const CATALOGUE = m0Catalogue();
 const CATACLYSM = cardId('cataclysm');
+/** Cataclysm hits every enemy for 60% of its printed 44 (GDD §4.8). */
+const CATACLYSM_DAMAGE = 26;
 
 function opened(ultimate: UltimateRule, ratHp = 200): CombatState {
   const started = startCombat({
@@ -41,7 +43,7 @@ describe('Ultimate rules (GDD §22 Q1)', () => {
     const step = playUltimate(state);
 
     expect(findActor(step.state, PLAYER)?.nextActTick).toBe(state.now + 16);
-    expect(findActor(step.state, RAT)?.hp).toBe(200 - 44);
+    expect(findActor(step.state, RAT)?.hp).toBe(200 - CATACLYSM_DAMAGE);
   });
 
   it('windup: the blow is committed now and lands later, and you keep acting', () => {
@@ -53,7 +55,11 @@ describe('Ultimate rules (GDD §22 Q1)', () => {
     // Nothing has landed yet — it is in flight, and the queue can show it.
     expect(findActor(step.state, RAT)?.hp).toBe(200);
     expect(step.state.pending).toEqual([
-      expect.objectContaining({ card: CATACLYSM, landsAt: state.now + 16, amount: 44 }),
+      expect.objectContaining({
+        card: CATACLYSM,
+        landsAt: state.now + 16,
+        amount: CATACLYSM_DAMAGE,
+      }),
     ]);
     expect(step.events).toContainEqual(
       expect.objectContaining({ kind: 'strike_committed', landsAt: state.now + 16 }),
@@ -77,7 +83,7 @@ describe('Ultimate rules (GDD §22 Q1)', () => {
 
     expect(landedEvent).toBe(true);
     expect(state.pending).toEqual([]);
-    expect(findActor(state, RAT)?.hp).toBe(200 - 44);
+    expect(findActor(state, RAT)?.hp).toBe(200 - CATACLYSM_DAMAGE);
   });
 
   it('refund: costs full Weight on a miss, half of it back on a kill', () => {

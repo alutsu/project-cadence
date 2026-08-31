@@ -2,9 +2,11 @@ import { isAlive, type Actor } from './actor.ts';
 import type { CombatEvent } from './events.ts';
 import { absorb, decayGuard } from './guard.ts';
 import { breaksPoise, stagger } from './poise.ts';
+import type { ActorId } from './ids.ts';
 import { returnDueCards } from './piles.ts';
 import type { CombatState, PendingStrike } from './state.ts';
 import { withActor } from './state.ts';
+import { strikeTargets } from './targeting.ts';
 import {
   BURN_INTERVAL,
   POISON_INTERVAL,
@@ -96,7 +98,7 @@ function landPendingStrikes(state: CombatState, at: Tick): EffectStep {
   let current: CombatState = { ...state, pending: state.pending.filter((s) => s.landsAt > at) };
 
   for (const strike of due) {
-    const struck = strikeTarget(current, strike, at);
+    const struck = landStrike(current, strike, at);
     current = struck.state;
     events.push({ kind: 'strike_landed', at, card: strike.card }, ...struck.events);
   }
@@ -104,30 +106,47 @@ function landPendingStrikes(state: CombatState, at: Tick): EffectStep {
   return { state: current, events };
 }
 
-function strikeTarget(state: CombatState, strike: PendingStrike, at: Tick): EffectStep {
-  const target = state.actors.find((actor) => actor.id === strike.target);
+/**
+ * A strike that has waited out its wind-up lands on whoever is standing now —
+ * for an AoE, that is the line as it is at impact, not as it was when the card
+ * was committed (GDD §4.8, §22 Q1).
+ */
+function landStrike(state: CombatState, strike: PendingStrike, at: Tick): EffectStep {
+  const events: CombatEvent[] = [];
+  let current = state;
+
+  for (const target of strikeTargets(state, strike.targeting, strike.target)) {
+    const struck = strikeOne(current, { strike, target, at });
+    current = struck.state;
+    events.push(...struck.events);
+  }
+
+  return { state: current, events };
+}
+
+interface LandingOrder {
+  readonly strike: PendingStrike;
+  readonly target: ActorId;
+  readonly at: Tick;
+}
+
+function strikeOne(state: CombatState, order: LandingOrder): EffectStep {
+  const { strike, target: targetId, at } = order;
+  const target = state.actors.find((actor) => actor.id === targetId);
   if (target === undefined || !isAlive(target)) return { state, events: [] };
 
   const { actor: wounded, absorbed } = absorb(target, strike.amount);
   const events: CombatEvent[] = [
-    {
-      kind: 'damage_dealt',
-      at,
-      source: strike.source,
-      target: strike.target,
-      amount: strike.amount,
-    },
+    { kind: 'damage_dealt', at, source: strike.source, target: targetId, amount: strike.amount },
   ];
-  if (absorbed > 0)
-    events.push({ kind: 'guard_absorbed', at, actor: strike.target, amount: absorbed });
+  if (absorbed > 0) events.push({ kind: 'guard_absorbed', at, actor: targetId, amount: absorbed });
 
   const shaken =
     isAlive(wounded) && breaksPoise(wounded, strike.amount)
       ? stagger(wounded, state.rules.firstStagger)
       : null;
-  if (shaken !== null)
-    events.push({ kind: 'staggered', at, actor: strike.target, delay: shaken.delay });
-  if (!isAlive(wounded)) events.push({ kind: 'actor_died', at, actor: strike.target });
+  if (shaken !== null) events.push({ kind: 'staggered', at, actor: targetId, delay: shaken.delay });
+  if (!isAlive(wounded)) events.push({ kind: 'actor_died', at, actor: targetId });
 
   return { state: withActor(state, shaken?.actor ?? wounded), events };
 }

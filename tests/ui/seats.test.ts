@@ -4,7 +4,8 @@ import { ENCOUNTERS, PLAYER, RAT } from '../../src/data/encounters.ts';
 import { startCombat } from '../../src/sim/combat.ts';
 import { actorId, cardId } from '../../src/sim/ids.ts';
 import { createRng } from '../../src/sim/rng.ts';
-import { enemySeat, livingEnemies } from '../../src/ui/EnemyLine.ts';
+import { livingEnemies } from '../../src/sim/state.ts';
+import { enemySeat } from '../../src/ui/EnemyLine.ts';
 import { handSeat } from '../../src/ui/Hand.ts';
 import { LAYOUT } from '../../src/ui/theme.ts';
 

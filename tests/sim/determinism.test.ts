@@ -113,7 +113,9 @@ describe('determinism (GDD §20.2, CLAUDE.md §7.2)', () => {
       't23 turn player',
       't23 no draw (draw_pile_empty)',
       't23 played player cleave w6',
-      't23 damage player -> rat 14',
+      // Cleave hits everything for 60% of its printed 14 (GDD §4.8); with one
+      // rat left standing that is 8, and 8 is enough.
+      't23 damage player -> rat 8',
       't23 died rat',
       't23 cooldown cleave -> t37',
       't23 scheduled player -> t29',

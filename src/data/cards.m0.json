@@ -6,7 +6,14 @@
     { "id": "feint", "name": "Feint", "class": "light", "damage": 6, "tags": ["Physical"] },
     { "id": "dart", "name": "Dart", "class": "light", "damage": 8, "tags": ["Physical"] },
     { "id": "riposte", "name": "Riposte", "class": "light", "damage": 10, "tags": ["Physical"] },
-    { "id": "cleave", "name": "Cleave", "class": "standard", "damage": 14, "tags": ["Physical"] },
+    {
+      "id": "cleave",
+      "name": "Cleave",
+      "class": "standard",
+      "damage": 14,
+      "targeting": "all",
+      "tags": ["Physical"]
+    },
     { "id": "pin", "name": "Pin", "class": "standard", "damage": 13, "tags": ["Physical"] },
     {
       "id": "hammerfall",
@@ -15,7 +22,14 @@
       "damage": 16,
       "tags": ["Physical"]
     },
-    { "id": "sweep", "name": "Sweep", "class": "standard", "damage": 12, "tags": ["Physical"] },
+    {
+      "id": "sweep",
+      "name": "Sweep",
+      "class": "standard",
+      "damage": 12,
+      "targeting": "all",
+      "tags": ["Physical"]
+    },
     { "id": "crush", "name": "Crush", "class": "heavy", "damage": 24, "tags": ["Physical"] },
     { "id": "sunder", "name": "Sunder", "class": "heavy", "damage": 22, "tags": ["Physical"] },
     {
@@ -23,6 +37,7 @@
       "name": "Cataclysm",
       "class": "ultimate",
       "damage": 44,
+      "targeting": "all",
       "tags": ["Physical"]
     }
   ]

@@ -155,6 +155,15 @@ reason answer 2 came back "attack is worth it more than defence". Both readings
 point at the same knob (`J`/`K`, decay), and the hour is the place to settle it.
 
 
+**[2026-08-30] The solo Warden now has exactly one key, by one point.** Making
+Cleave, Sweep and Cataclysm AoE (GDD §4.8) drops Cataclysm from 44 to 26, and
+fight 2's Warden is scaled to Poise 25 — so Cataclysm is the only card in the
+deck that can stagger it, and it clears by a single point. Crush (24) and Sunder
+(22) no longer can. That is a Weight-16, Recovery-60 answer to a fight that runs
+on a 16-tick wind-up, which may be the tension §5 answer 5 already liked or may
+be a fight with one line in it. It is a *scaling* finding, not an AoE one:
+`SOLO_LEVEL` is what put the Warden at 25, and lowering it is the lever.
+
 These are the numbers the GDD itself flags as guesses. The tuning console exists
 so they can be chased inside the hour rather than between builds.
 
@@ -266,10 +275,10 @@ Two separate failures, both of them on one line of the silhouette.
   threshold the reducer had stopped using, which is a P3 bug waiting for M1.
 
 **What to watch for in the re-run:** whether Stagger becomes a *planned* act
-rather than one noticed afterwards — the Warden's Poise of 20 against a hand
-where only Crush, Sunder and Cataclysm clear it is the fight that should now
-read as a puzzle rather than as arithmetic. If it still doesn't, the finding is
-that the deck, not the label, is the problem (§4, GDD §5.1 [AMD]).
+rather than one noticed afterwards. Fight 4 is the one to judge it on — the
+Warden there has Poise 20, and Crush, Sunder and Cataclysm all clear it, so
+there is a choice to make. If it still doesn't read, the finding is that the
+deck, not the label, is the problem (§4, GDD §5.1 [AMD]).
 
 ### The first action of every fight was silent (2026-08-30)
 
@@ -288,6 +297,24 @@ at −16 dBFS, Wait at −21, and Stagger — the payoff moment — at −22, th
 figure in the set. `VOLUME` is not a GDD number, so it can move if the hour says
 it should; the §1 note about listening for a Heavy card's pitch is the thing to
 judge it by.
+
+### Cleave, Sweep and Cataclysm hit the line (2026-08-30)
+
+Asked for directly, and implemented to GDD §4.8 as written: an AoE hits every
+living enemy for 60% of its printed damage, and each enemy's Poise is checked
+against the figure *it* took — so Cleave's 8 breaks a rat and leaves a Warden
+standing, which is the [AMD] case §4.8 names.
+
+The reduced figure is what the card face prints, under a `HITS ALL ENEMIES`
+line: an AoE's printed damage is a number no enemy ever takes, and the hand is
+not allowed to advertise one (P3). The hover readout collapses a whole shaken
+line into one entry — `2 STAGGERS +3, +3` — because which enemy took which
+delay is already on the silhouettes.
+
+**What to watch for in the re-run:** whether Cleave at 8-to-all is ever chosen
+over Hammerfall at 16-to-one. Two rats is the break-even by arithmetic; if the
+answer is still "always Hammerfall", the 60% share is the lever (§4.8 says
+"typically", so it is a tunable) rather than the idea.
 
 ### Telling two of the same enemy apart (2026-08-30)
 

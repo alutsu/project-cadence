@@ -18,6 +18,7 @@ import { DEFAULT_RULES, WINDUP_COMMIT_WEIGHT, type CombatRules } from './rules.t
 import type { CombatEvent } from './events.ts';
 import type { ActorId, CardId } from './ids.ts';
 import { BASE_SPEED, actionDelay, combatSeedTick, drawsOnAction, effectiveSpeed } from './speed.ts';
+import { damagePerTarget, strikeTargets } from './targeting.ts';
 import { nextToAct } from './timeline.ts';
 import {
   findActor,
@@ -228,7 +229,8 @@ function commitPending(state: CombatState, order: PendingOrder): CombatStep {
     name: order.card.name,
     source: order.actor.id,
     target: order.target.id,
-    amount: order.card.damage,
+    targeting: order.card.targeting,
+    amount: damagePerTarget(order.card),
     landsAt,
   };
 
@@ -244,6 +246,34 @@ function commitPending(state: CombatState, order: PendingOrder): CombatStep {
       },
     ],
   };
+}
+
+interface StrikeOrder {
+  readonly source: ActorId;
+  readonly card: CardDefinition;
+  readonly chosen: ActorId;
+}
+
+/**
+ * A card's damage, dealt to everything it reaches (GDD §4.8).
+ *
+ * Blows land one at a time rather than as a batch: each one can kill, and each
+ * one's Poise is checked against the figure *that* enemy took, which is what
+ * makes an AoE stagger a rat and leave a Warden standing ([AMD] §4.8). The log
+ * therefore reads in the order the line was struck, left to right.
+ */
+function strikeAll(state: CombatState, order: StrikeOrder): CombatStep {
+  const amount = damagePerTarget(order.card);
+  const events: CombatEvent[] = [];
+  let current = state;
+
+  for (const target of strikeTargets(state, order.card.targeting, order.chosen)) {
+    const struck = applyDamage(current, { source: order.source, target, amount });
+    current = struck.state;
+    events.push(...struck.events);
+  }
+
+  return { state: current, events };
 }
 
 /**
@@ -533,7 +563,7 @@ function commitPlay(
 
   const struck = windup
     ? commitPending(bled.state, { actor, card, target })
-    : applyDamage(bled.state, { source: actor.id, target: target.id, amount: card.damage });
+    : strikeAll(bled.state, { source: actor.id, card, chosen: target.id });
 
   const cooled = sendToCooldown(struck.state, card.id);
   const committed = windup ? WINDUP_COMMIT_WEIGHT : card.weight;

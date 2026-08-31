@@ -1,9 +1,9 @@
 import Phaser from 'phaser';
-import { currentIntent, isAlive, type Actor } from '../sim/actor.ts';
+import { currentIntent, type Actor } from '../sim/actor.ts';
 import type { ActionPreview } from '../sim/forecast.ts';
 import type { ActorId } from '../sim/ids.ts';
 import { effectivePoise } from '../sim/poise.ts';
-import type { CombatState } from '../sim/state.ts';
+import { livingEnemies, type CombatState } from '../sim/state.ts';
 import { describeStatuses } from './statusText.ts';
 import {
   COLORS,
@@ -21,11 +21,6 @@ import {
 export interface EnemyLineOptions {
   readonly scene: Phaser.Scene;
   readonly onTarget: (actor: ActorId) => void;
-}
-
-/** The living enemies, in the order they are drawn. */
-export function livingEnemies(state: CombatState): readonly Actor[] {
-  return state.actors.filter((actor) => actor.side === 'enemy' && isAlive(actor));
 }
 
 /**

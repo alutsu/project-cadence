@@ -1,4 +1,4 @@
-import type { CardCatalogue, CardDefinition } from '../sim/card.ts';
+import type { CardCatalogue, CardDefinition, CardTargeting } from '../sim/card.ts';
 import { cardId } from '../sim/ids.ts';
 import { WEIGHT_CLASSES, isWeightClass } from '../sim/weightClass.ts';
 import cardData from './cards.m0.json' with { type: 'json' };
@@ -17,7 +17,12 @@ interface RawCard {
   readonly name: string;
   readonly class: string;
   readonly damage: number;
+  readonly targeting: CardTargeting;
   readonly tags: readonly string[];
+}
+
+function isTargeting(value: unknown): value is CardTargeting {
+  return value === 'single' || value === 'all';
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -31,7 +36,7 @@ function isStringArray(value: unknown): value is readonly string[] {
 function readCard(value: unknown, position: number): RawCard | string {
   if (!isRecord(value)) return `card ${String(position)} is not an object`;
 
-  const { id, name, class: weightClass, damage, tags } = value;
+  const { id, name, class: weightClass, damage, targeting, tags } = value;
   if (typeof id !== 'string' || id.length === 0) return `card ${String(position)} has no id`;
   if (typeof name !== 'string' || name.length === 0) return `card "${id}" has no name`;
   if (!isWeightClass(weightClass))
@@ -41,7 +46,15 @@ function readCard(value: unknown, position: number): RawCard | string {
   }
   if (!isStringArray(tags)) return `card "${id}" has invalid tags`;
 
-  return { id, name, class: weightClass, damage, tags };
+  // Most cards hit one enemy, so the field is written only on the ones that do
+  // not (GDD §4.8). Absent means single; a typo'd "aoe" must still fail loudly
+  // rather than quietly load as a single-target card (CLAUDE.md §3.3).
+  const reach: unknown = targeting ?? 'single';
+  if (!isTargeting(reach)) {
+    return `card "${id}" has an unknown targeting: ${JSON.stringify(targeting)}`;
+  }
+
+  return { id, name, class: weightClass, damage, targeting: reach, tags };
 }
 
 function toDefinition(raw: RawCard): CardDefinition {
@@ -55,6 +68,7 @@ function toDefinition(raw: RawCard): CardDefinition {
     weight: profile.weight,
     recovery: profile.recovery,
     damage: raw.damage,
+    targeting: raw.targeting,
     tags: raw.tags,
   };
 }

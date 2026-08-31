@@ -55,9 +55,8 @@ export class PreviewReadout {
       `${String(preview.incomingDamage)} incoming`,
       `${String(dealt)} dealt`,
     ];
-    for (const stagger of preview.staggers) {
-      parts.push(`STAGGER +${String(stagger.delay)}`);
-    }
+    const staggers = staggerPart(preview);
+    if (staggers !== null) parts.push(staggers);
 
     this.detail.setText(parts.join('   ·   ')).setColor(detailInk(preview));
   }
@@ -97,6 +96,19 @@ function plural(turns: number): string {
 
 function headlineInk(preview: ActionPreview): string {
   return preview.hpWhenPlayerActs === 0 && preview.outcome === 'ongoing' ? DANGER_INK : PLAYER_INK;
+}
+
+/**
+ * One entry however many enemies are shaken. An AoE staggers a whole line at
+ * once (GDD §4.8), and `STAGGER +3 · STAGGER +3 · STAGGER +2` spends three
+ * slots of the widest line on screen saying one thing (P5). Which enemy takes
+ * which delay is on the silhouettes; this is the tempo summary.
+ */
+function staggerPart(preview: ActionPreview): string | null {
+  const delays = preview.staggers.map((entry) => `+${String(entry.delay)}`);
+  if (delays.length === 0) return null;
+  if (delays.length === 1) return `STAGGER ${delays.join('')}`;
+  return `${String(delays.length)} STAGGERS ${delays.join(', ')}`;
 }
 
 /** A Stagger is the payoff moment, so it wins the line's colour (GDD §4.6). */

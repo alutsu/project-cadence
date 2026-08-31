@@ -1,5 +1,5 @@
-import type { Actor } from './actor.ts';
-import type { CardCatalogue } from './card.ts';
+import { isAlive, type Actor } from './actor.ts';
+import type { CardCatalogue, CardTargeting } from './card.ts';
 import type { CombatRules } from './rules.ts';
 import type { ActorId, CardId } from './ids.ts';
 import type { Tick } from './tick.ts';
@@ -22,6 +22,13 @@ export interface PendingStrike {
   readonly name: string;
   readonly source: ActorId;
   readonly target: ActorId;
+  /**
+   * Expanded when the strike lands, never when it is committed: an AoE hits the
+   * enemies that are alive at the moment of impact (GDD §4.8), and a wind-up is
+   * long enough for that to be a different set.
+   */
+  readonly targeting: CardTargeting;
+  /** What one enemy takes, already reduced if this strike hits all of them. */
   readonly amount: number;
   readonly landsAt: Tick;
 }
@@ -49,6 +56,14 @@ export function findActor(state: CombatState, id: ActorId): Actor | undefined {
 
 export function playerActor(state: CombatState): Actor | undefined {
   return state.actors.find((actor) => actor.side === 'player');
+}
+
+/**
+ * Every enemy still standing, in seat order. The order is the actor order, so
+ * an AoE resolves left to right and the event log reads the way the line looks.
+ */
+export function livingEnemies(state: CombatState): readonly Actor[] {
+  return state.actors.filter((actor) => actor.side === 'enemy' && isAlive(actor));
 }
 
 /** Replaces one actor, leaving every other reference in the state untouched. */

@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import type { CardDefinition } from '../sim/card.ts';
+import { damagePerTarget } from '../sim/targeting.ts';
 import {
   COLORS,
   ENEMY_INK,
@@ -71,6 +72,21 @@ export class CardFace {
         .setOrigin(0.5, 0.5),
     );
 
+    // Drawn only on the cards that have it, so the reach reads as the exception
+    // it is (P5) — and on its own line, because appending it to the class label
+    // ran it off both edges of the card.
+    if (card.targeting === 'all') {
+      this.view.add(
+        scene.add
+          .text(0, -cardHeight / 2 + 78, 'HITS ALL ENEMIES', {
+            fontFamily: FONT,
+            fontSize: TYPE.cardStatLabel,
+            color: PLAYER_INK,
+          })
+          .setOrigin(0.5, 0.5),
+      );
+    }
+
     for (const column of statColumns(card)) {
       this.view.add(
         scene.add
@@ -137,7 +153,11 @@ function statColumns(card: CardDefinition): readonly StatColumn[] {
   const spread = Math.round(LAYOUT.hand.cardWidth / 3.6);
   return [
     { label: 'WGT', value: String(card.weight), offset: -spread, emphasis: true },
-    { label: 'DMG', value: String(card.damage), offset: 0, emphasis: false },
+    // An AoE's printed damage is not what any enemy takes, so the figure shown
+    // is the one the sim will deal to each of them (GDD §4.8, P3). The label
+    // stays "DMG": a wider one broke the three-column alignment §15 relies on,
+    // and the card already says it hits all of them.
+    { label: 'DMG', value: String(damagePerTarget(card)), offset: 0, emphasis: false },
     { label: 'REC', value: String(card.recovery), offset: spread, emphasis: false },
   ];
 }
