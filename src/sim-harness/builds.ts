@@ -166,7 +166,7 @@ export function playRun(spec: {
     // Deliberately greedy and unthinking: it takes the first thing offered. A
     // builder that read the Omen before choosing would be a *policy* decision
     // and belongs beside the others, not hidden in the driver.
-    const routing = routeFrom(view);
+    const routing = routeFrom(view, run);
     if (routing !== null) {
       run = advanceRun(run, routing).run;
       continue;
@@ -204,15 +204,29 @@ export function playRun(spec: {
 /** A run is roughly twenty nodes; this only catches a flow that cannot end. */
 const FLOW_LIMIT = 400;
 
-/** How the driver moves through everything that is not a fight. */
-function routeFrom(view: RunView): RunIntent | null {
+/**
+ * How the driver moves through everything that is not a fight.
+ *
+ * It rests when badly hurt, because §11's Sanctum is the *only* healing in a
+ * run and a driver that always took the first node on offer would be measuring
+ * a game without any. That is route-finding rather than skill — a policy is
+ * about which card to play — but it has to be at least this competent or the
+ * numbers describe a run no person would play.
+ */
+function routeFrom(view: RunView, run: RunState): RunIntent | null {
   if (view.kind === 'sanctum') return { kind: 'rest' };
   if (view.kind === 'market') return { kind: 'leaveNode' };
   if (view.kind !== 'map') return null;
 
-  const node = view.offered[0];
+  const hurt = run.hp < run.maxHp * REST_THRESHOLD;
+  const sanctum = view.offered.find((node) => node.kind === 'sanctum');
+  const node = hurt && sanctum !== undefined ? sanctum : view.offered[0];
+
   return node === undefined ? null : { kind: 'enterNode', node: node.id };
 }
+
+/** Below this share of the pool, a Sanctum is worth the node it costs. */
+const REST_THRESHOLD = 0.6;
 
 /** The signature of a build: which frames, sorted, so order is not identity. */
 export function buildSignature(outcome: RunOutcome): string {

@@ -817,7 +817,7 @@ function toNextEncounter(run: RunState): { readonly run: RunState; readonly view
     const view = viewOf(current);
     if (view.kind === 'encounter' || view.kind === 'summary') return { run: current, view };
 
-    const intent = intentFrom(view);
+    const intent = intentFrom(view, current);
     if (intent === null) return { run: current, view };
     current = advanceRun(current, intent).run;
   }
@@ -828,15 +828,25 @@ function toNextEncounter(run: RunState): { readonly run: RunState; readonly view
 /** A guard against a flow that cannot reach a fight; a run is ~20 nodes. */
 const FLOW_STEPS = 200;
 
-/** What the stand-in does at each non-combat view, or null if it is stuck. */
-function intentFrom(view: RunView): RunIntent | null {
+/**
+ * What the stand-in does at each non-combat view, or null if it is stuck.
+ *
+ * [M2 STAND-IN] It rests when badly hurt, because §11's Sanctum is the only
+ * healing there is. S6 hands this choice to the player, where it belongs.
+ */
+function intentFrom(view: RunView, run: RunState): RunIntent | null {
   if (view.kind === 'sanctum') return { kind: 'rest' };
   if (view.kind === 'market') return { kind: 'leaveNode' };
   if (view.kind !== 'map') return null;
 
-  const node = view.offered[0];
+  const hurt = run.hp < run.maxHp * REST_THRESHOLD;
+  const sanctum = view.offered.find((node) => node.kind === 'sanctum');
+  const node = hurt && sanctum !== undefined ? sanctum : view.offered[0];
+
   return node === undefined ? null : { kind: 'enterNode', node: node.id };
 }
+
+const REST_THRESHOLD = 0.6;
 
 function openingState(run: RunState): Opening {
   const view = viewOf(run);

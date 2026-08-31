@@ -91,8 +91,18 @@ export const DUNGEONS_PER_DEPTH = 2;
  */
 const DUNGEON_ENCOUNTERS = [3, 4] as const;
 
-/** §11: a Dungeon node's own difficulty, on top of the world's Threat. */
-const RATINGS = [0, 1, 2] as const;
+/**
+ * §11: a Dungeon node's own difficulty, on top of the world's Threat.
+ *
+ * The range widens with Depth. A rating adds to the enemy level directly, so a
+ * rating of 2 is worth four points of Threat — at Depth 1, where the player
+ * holds five cards, that turned the second node of a run into a fight three
+ * levels above the first. The node's difficulty is meant to be a *choice within
+ * a Depth*, not a way to skip several.
+ */
+function ratingsAt(depth: number): readonly number[] {
+  return depth <= 1 ? [0, 1] : [0, 1, 2];
+}
 
 /**
  * Draws a fixed number of times whatever it picks (§20.2 [AMD], M1 D32). Every
@@ -123,7 +133,7 @@ function dungeonAt(rng: Rng, depth: number, index: number): MapNode {
     id: nodeId(`d${String(depth)}n${String(index)}`),
     kind: 'dungeon',
     depth,
-    rating: pick(rng, RATINGS) + (elite ? 1 : 0),
+    rating: pick(rng, ratingsAt(depth)) + (elite ? 1 : 0),
     omen: rollOmen(rng, elite),
     encounters: pick(rng, DUNGEON_ENCOUNTERS),
     elite,

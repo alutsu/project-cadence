@@ -1,5 +1,5 @@
-import { ARCHETYPES } from '../data/archetypes.ts';
-import { ENCOUNTERS, PLAYER, scaleEnemy } from '../data/encounters.ts';
+import { PLAYER, PLAYER_SEED } from '../data/encounters.ts';
+import { generateEncounter } from './generate.ts';
 import { deckAtLevel, skillTable, type SkillTable } from '../data/skills.ts';
 import {
   bankXp,
@@ -9,7 +9,7 @@ import {
   STARTING_LEVEL,
   xpAwarded,
 } from '../sim/level.ts';
-import type { ActorSeed, CombatSetup } from '../sim/combat.ts';
+import type { CombatSetup } from '../sim/combat.ts';
 import type { CombatEvent } from '../sim/events.ts';
 import { type BuildState, type Frame, type GemTier } from '../sim/gem.ts';
 import type { CardId, GemId } from '../sim/ids.ts';
@@ -181,13 +181,17 @@ export function depthOf(run: RunState): number {
  */
 export function encounterSetupFor(run: RunState, node: MapNode): CombatSetup {
   const level = enemyLevel(node.depth - 1, run.threat) + node.rating;
-  const encounter = ENCOUNTERS[(node.depth + run.position.indexInNode) % ENCOUNTERS.length];
-  if (encounter === undefined) throw new RangeError('the encounter roster is empty');
+
+  // Drawn here, at entry, off `enemyGen` — a different stream from the one that
+  // laid the map out. §11's "composition is unknown until entered" is therefore
+  // a fact about which stream runs when, not a convention the UI honours.
+  const enemies = generateEncounter(
+    { level, elite: node.elite, omen: node.omen },
+    restoreRng({ ...run.streams.enemyGen, position: encounterDraw(run, node) }),
+  );
 
   return {
-    actors: encounter.actors.map((actor) =>
-      actor.side === 'player' ? { ...actor, hp: run.hp, maxHp: run.maxHp } : rescale(actor, level),
-    ),
+    actors: [{ ...PLAYER_SEED, hp: run.hp, maxHp: run.maxHp }, ...enemies],
     catalogue: SKILLS.catalogue,
     deck: run.deck,
     // Hashed rather than added, so two nodes at different Depths cannot share
@@ -200,14 +204,20 @@ export function encounterSetupFor(run: RunState, node: MapNode): CombatSetup {
 }
 
 /**
- * An authored actor re-levelled (GDD §12.1). Speed is untouched by rule: if
- * enemy Speed grew with level, the whole queue-planning skill would degrade
- * over a run.
+ * Where in the `enemyGen` stream this node's line is drawn from.
+ *
+ * Derived rather than advanced, so re-entering the same node at the same point
+ * in a run yields the same line — which is what makes §16's "an encounter is
+ * atomic; resume replays it from its start state" true without the composition
+ * having to be written into the save.
  */
-function rescale(actor: ActorSeed, level: number): ActorSeed {
-  const archetype = ARCHETYPES.find((entry) => actor.name.startsWith(entry.name));
-  return archetype === undefined ? actor : scaleEnemy(archetype, level, actor.id);
+function encounterDraw(run: RunState, node: MapNode): number {
+  const parts = [node.depth, node.rating, run.position.indexInNode, run.threat];
+  return parts.reduce((total, part) => total * ENCOUNTER_DRAW_SPREAD + part, 0) % DRAW_LIMIT;
 }
+
+const ENCOUNTER_DRAW_SPREAD = 31;
+const DRAW_LIMIT = 1_000_000;
 
 /** A distinct shuffle per node per fight, from the run's one seed (§20.2). */
 function combatSeedFor(run: RunState, node: MapNode): number {

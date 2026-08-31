@@ -18,6 +18,15 @@ export interface EnemyArchetype {
   readonly baseHp: number;
   readonly basePoise: number;
   /**
+   * What this archetype costs an encounter's budget (§12.1, §12.2 [AMD]).
+   *
+   * §12.2 states the rule this number exists to encode: "a second enemy adds
+   * its whole damage output while adding only its own HP to the pool", so a duo
+   * must be built from cheaper parts than the solo fight before it. A budget
+   * makes that arithmetic instead of a matter of judgement per encounter.
+   */
+  readonly cost: number;
+  /**
    * GDD §7.2, and hand-authored rather than generated: §12.1's generator is
    * M2's. Speed never scales with level and neither does this — a resistance
    * that grew would make the Weave a tax on depth rather than a question about
@@ -39,6 +48,7 @@ export const POISON_RAT: EnemyArchetype = {
   baseSpeed: 130,
   baseHp: 34,
   basePoise: 7,
+  cost: 1,
   // Vermin that lives where the light does not. Light, because this is the
   // enemy a player meets first and the Weave should not be the lesson.
   resistances: resistTo({ Shadow: 0.3 }),
@@ -61,6 +71,7 @@ export const WARDEN: EnemyArchetype = {
   baseSpeed: 70,
   baseHp: 72,
   basePoise: 20,
+  cost: 4,
   // Armour. This is the archetype the resistance rule exists for: the Warden is
   // already the fight you solve rather than out-damage (§12.2), and shrugging
   // off the deck's most repeated tag pushes the answer off Lunge and Crush.
@@ -78,6 +89,7 @@ export const CHIME_ADEPT: EnemyArchetype = {
   baseSpeed: 115,
   baseHp: 48,
   basePoise: 12,
+  cost: 2,
   // A thing made of resonance is not moved by a wide arc or a clever one.
   resistances: resistTo({ Storm: 0.5, Arcane: 0.3 }),
   intents: [
@@ -91,4 +103,60 @@ export const CHIME_ADEPT: EnemyArchetype = {
   ],
 };
 
-export const ARCHETYPES: readonly EnemyArchetype[] = [POISON_RAT, WARDEN, CHIME_ADEPT];
+/**
+ * GDD §12.2: 50% Fire resist, retaliates on hit. The retaliation is deferred —
+ * it needs a reactive hook the sim does not have — so what ships is the
+ * resistance and a statline, and the name is claimed rather than the behaviour.
+ * [M2 STAND-IN]
+ */
+export const EMBERHIDE: EnemyArchetype = {
+  id: 'emberhide',
+  name: 'Emberhide',
+  baseSpeed: 100,
+  baseHp: 44,
+  basePoise: 10,
+  cost: 2,
+  // The archetype §7.2 exists for: a wall against exactly one tag.
+  resistances: resistTo({ Fire: 0.5, Physical: 0.15 }),
+  intents: [
+    { name: 'Scald', weight: tick(6), damage: 5, applies: null },
+    {
+      name: 'Cinder',
+      weight: tick(5),
+      damage: 2,
+      applies: { kind: 'burn', magnitude: 2, duration: tick(20) },
+    },
+  ],
+};
+
+/**
+ * GDD §12.2: high HP, self-damage burst. The self-damage is the part that makes
+ * it fair, and it is deferred with the same honesty as Emberhide's retaliation
+ * — for now it is simply a slow, heavy body. [M2 STAND-IN]
+ */
+export const BERSERKER: EnemyArchetype = {
+  id: 'berserker',
+  name: 'Bleeding Berserker',
+  baseSpeed: 90,
+  baseHp: 62,
+  basePoise: 14,
+  cost: 3,
+  resistances: resistTo({ Physical: 0.25, Shadow: 0.2 }),
+  intents: [
+    { name: 'Wild Swing', weight: tick(8), damage: 9, applies: null },
+    {
+      name: 'Rend',
+      weight: tick(6),
+      damage: 4,
+      applies: { kind: 'bleed', magnitude: 3, duration: tick(18) },
+    },
+  ],
+};
+
+export const ARCHETYPES: readonly EnemyArchetype[] = [
+  POISON_RAT,
+  CHIME_ADEPT,
+  EMBERHIDE,
+  BERSERKER,
+  WARDEN,
+];

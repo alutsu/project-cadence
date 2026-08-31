@@ -15,7 +15,8 @@ export const ADEPT = actorId('adept');
 /** GDD §5.1: the player starts at Speed 100 with 70 Max HP. */
 export const PLAYER_MAX_HP = 70;
 
-const PLAYER_SEED: ActorSeed = {
+/** The player as an actor. §12.1 generates the rest of the line. */
+export const PLAYER_SEED: ActorSeed = {
   id: PLAYER,
   name: 'Adventurer',
   side: 'player',
