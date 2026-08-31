@@ -80,7 +80,7 @@ interface DamageOrder {
 
 /** GDD §4.1: seed every actor at `ceil(600 / speed)`; faster actors act first. */
 export function startCombat(setup: CombatSetup): CombatStep {
-  const actors = setup.actors.map((seed, index) => seedActor(seed, index));
+  const actors = withDistinctNames(setup.actors).map((seed, index) => seedActor(seed, index));
   const state: CombatState = {
     now: TICK_ZERO,
     rules: setup.rules ?? DEFAULT_RULES,
@@ -127,6 +127,31 @@ function startingHp(seed: ActorSeed): number {
     );
   }
   return seed.hp;
+}
+
+/**
+ * Two Poison Rats are two different problems — one may be staggered, poisoned or
+ * nearly dead while the other is not — but the queue strip names an actor, and a
+ * name that appears twice points at no silhouette in particular. Duplicated
+ * names get a running number in seat order, so a slot can be matched to a lane
+ * by eye (GDD §15, P5).
+ *
+ * An unduplicated name is left alone: a "Warden 1" standing on its own is a
+ * number that answers nothing. The ordinal is fixed at the start of the
+ * encounter and never renumbered, so Rat 2 stays Rat 2 after Rat 1 dies —
+ * position is what shifts, identity is not.
+ */
+export function withDistinctNames(seeds: readonly ActorSeed[]): readonly ActorSeed[] {
+  const totals = new Map<string, number>();
+  for (const seed of seeds) totals.set(seed.name, (totals.get(seed.name) ?? 0) + 1);
+
+  const numbered = new Map<string, number>();
+  return seeds.map((seed) => {
+    if ((totals.get(seed.name) ?? 0) < 2) return seed;
+    const ordinal = (numbered.get(seed.name) ?? 0) + 1;
+    numbered.set(seed.name, ordinal);
+    return { ...seed, name: `${seed.name} ${String(ordinal)}` };
+  });
 }
 
 function seedActor(seed: ActorSeed, index: number): Actor {

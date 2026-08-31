@@ -270,3 +270,20 @@ rather than one noticed afterwards — the Warden's Poise of 20 against a hand
 where only Crush, Sunder and Cataclysm clear it is the fight that should now
 read as a puzzle rather than as arithmetic. If it still doesn't, the finding is
 that the deck, not the label, is the problem (§4, GDD §5.1 [AMD]).
+
+### Telling two of the same enemy apart (2026-08-30)
+
+Also from the run: *"where there is more than one enemy of the same type, for
+example, two rats, add a label to them, like 'Rat 1', 'Rat 2', so that I will
+know which rat belongs the attack on the lane."*
+
+The queue names an actor, and "Poison Rat" in four of eight slots points at no
+silhouette in particular — so the strip's whole claim, that you can read what is
+coming and act on it, stopped at the first duplicated name. Duplicates are now
+numbered in seat order at the start of the encounter, and the ordinal is fixed:
+Rat 2 stays Rat 2 after Rat 1 dies, because the strip is pointing at an identity
+and not at a position. A name with nothing to be told apart from is left plain.
+
+The opening report needed the same fix from the other side — it read `Poison Rat
+2, Poison Rat 2`, where both numbers were damage. It now reads `Poison Rat 1 for
+2, Poison Rat 2 for 2`.

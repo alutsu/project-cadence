@@ -33,12 +33,15 @@ describe('what happened before your first turn', () => {
   });
 
   it('names each attacker and totals what it did', () => {
-    // Two rats at Speed 130 both seed at t5 and both bite first.
+    // Two rats at Speed 130 both seed at t5 and both bite first. They are
+    // numbered, so the line has to name them apart — and "for" keeps the
+    // ordinal from reading as the damage.
     const scurry = opening(0);
     const line = openingReport(scurry.state, scurry.events);
 
     expect(line).toContain('before your first turn');
-    expect(line).toContain('Poison Rat 2');
+    expect(line).toContain('Poison Rat 1 for ');
+    expect(line).toContain('Poison Rat 2 for ');
   });
 
   it('reports a status the player is already carrying into their first turn', () => {

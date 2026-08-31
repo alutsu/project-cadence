@@ -31,7 +31,7 @@ export function openingReport(state: CombatState, events: readonly CombatEvent[]
 
   const struck = [...blows].map(([actor, amount]) => {
     const name = findActor(state, actor)?.name ?? 'something';
-    return `${name} ${String(amount)}`;
+    return `${name} for ${String(amount)}`;
   });
 
   const parts = [struck.join(', '), statuses.length === 0 ? '' : `you are ${statuses.join(', ')}`]
