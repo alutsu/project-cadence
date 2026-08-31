@@ -1,4 +1,5 @@
-import { CHAIN_SIZE, ENCOUNTERS, PLAYER, startsChain } from '../data/encounters.ts';
+import { ARCHETYPES } from '../data/archetypes.ts';
+import { ENCOUNTERS, PLAYER, scaleEnemy } from '../data/encounters.ts';
 import { deckAtLevel, skillTable, type SkillTable } from '../data/skills.ts';
 import {
   bankXp,
@@ -6,10 +7,9 @@ import {
   maxHpAtLevel,
   MAX_HP_PER_LEVEL,
   STARTING_LEVEL,
-  THREAT_PER_NODE,
   xpAwarded,
 } from '../sim/level.ts';
-import type { CombatSetup } from '../sim/combat.ts';
+import type { ActorSeed, CombatSetup } from '../sim/combat.ts';
 import type { CombatEvent } from '../sim/events.ts';
 import { type BuildState, type Frame, type GemTier } from '../sim/gem.ts';
 import type { CardId, GemId } from '../sim/ids.ts';
@@ -26,6 +26,13 @@ import {
 import type { CombatOutcome } from '../sim/state.ts';
 import type { WeaveSnapshot } from '../sim/weave.ts';
 import { rollAttunement, shiftAttunement, type AttunementTable } from './attunement.ts';
+import {
+  generateMap,
+  STARTING_POSITION,
+  type MapNode,
+  type RunMap,
+  type RunPosition,
+} from './map.ts';
 import {
   grantMaterial,
   NO_MATERIALS,
@@ -49,20 +56,18 @@ import { attemptSocket, removeGem, seatGem, socketsOf } from './socket.ts';
  * reaches back out for anything.
  */
 
-/**
- * [M1 STAND-IN] M0's encounter chain is the placeholder for §11's map: six
- * encounters in three chains of two, with a restore between them. A chain is
- * treated as a Depth, which gives §7.1's shift schedule exactly the two shifts
- * it asks for — at the start of chains 2 and 3 (docs/M1_PLAN.md D21).
- */
-export const DEPTHS = Math.ceil(ENCOUNTERS.length / CHAIN_SIZE);
-
 /** GDD §6.1: Max HP may never fall below 40% of the level baseline. */
 export const MAX_HP_FLOOR_SHARE = 0.4;
 
 export interface RunState {
   readonly seed: number;
-  readonly encounterIndex: number;
+  /**
+   * §11's four Depths, laid out once at run start. **Not persisted** — it is
+   * regenerated from the seed, because storing it would be storing a derived
+   * value; `mapDigest` is what a save carries instead (GDD §16).
+   */
+  readonly map: RunMap;
+  readonly position: RunPosition;
   /** GDD §5.1. Grants a skill and +6 Max HP; the deck follows from it. */
   readonly level: number;
   /** Banked toward the next level (GDD §5.2). */
@@ -123,10 +128,14 @@ export function startRun(seed: number): RunState {
   // moment in a run's life when it does not have one.
   const weave = createRng(seed, 'weave');
   const attunement = rollAttunement(weave);
+  // Drawn once, at the start, so the stream position cannot depend on the route
+  // the player later takes (GDD §20.2 [AMD]).
+  const map = createRng(seed, 'map');
 
   return {
     seed,
-    encounterIndex: 0,
+    map: generateMap(map),
+    position: STARTING_POSITION,
     level: STARTING_LEVEL,
     xp: 0,
     threat: 0,
@@ -142,7 +151,7 @@ export function startRun(seed: number): RunState {
     pouch: [],
     crafted: 0,
     rules: DEFAULT_RULES,
-    streams: { ...freshStreams(seed), weave: weave.state() },
+    streams: { ...freshStreams(seed), weave: weave.state(), map: map.state() },
   };
 }
 
@@ -156,29 +165,58 @@ export function weaveSnapshot(run: RunState): WeaveSnapshot {
   return { attunement: run.attunement, saturation: saturationOf(run.saturation) };
 }
 
-/** Which Depth the run is in, counting from 1 (docs/M1_PLAN.md D21). */
+/** Which Depth the run is in, counting from 1 (GDD §11). */
 export function depthOf(run: RunState): number {
-  return Math.floor(run.encounterIndex / CHAIN_SIZE) + 1;
+  return run.position.depth;
 }
 
-/** Everything combat needs, assembled by the run and read by nobody else. */
-export function encounterSetup(run: RunState): CombatSetup {
-  const encounter = ENCOUNTERS[run.encounterIndex % ENCOUNTERS.length];
-  if (encounter === undefined) throw new RangeError(`no encounter ${String(run.encounterIndex)}`);
+/**
+ * Everything combat needs, assembled by the run and read by nobody else.
+ *
+ * [M2 STAND-IN] §12.1's generator is S4's; until then a node's composition is
+ * drawn from the authored roster and re-levelled to what the node advertised.
+ * The *timing* is already right, which is the part that matters: this runs at
+ * entry, off a different stream from the one that laid the map out, so §11's
+ * "composition is unknown until entered" is a fact about the code.
+ */
+export function encounterSetupFor(run: RunState, node: MapNode): CombatSetup {
+  const level = enemyLevel(node.depth - 1, run.threat) + node.rating;
+  const encounter = ENCOUNTERS[(node.depth + run.position.indexInNode) % ENCOUNTERS.length];
+  if (encounter === undefined) throw new RangeError('the encounter roster is empty');
 
   return {
     actors: encounter.actors.map((actor) =>
-      actor.side === 'player' ? { ...actor, hp: run.hp, maxHp: run.maxHp } : actor,
+      actor.side === 'player' ? { ...actor, hp: run.hp, maxHp: run.maxHp } : rescale(actor, level),
     ),
     catalogue: SKILLS.catalogue,
     deck: run.deck,
-    // One stream position per encounter, so replaying a fight replays its
-    // shuffle (GDD §20.2) without the run's other systems shifting under it.
-    rng: createRng(run.seed + run.encounterIndex, 'combat'),
+    // Hashed rather than added, so two nodes at different Depths cannot share
+    // a shuffle — `seed + index` collided as soon as there was more than a line.
+    rng: createRng(combatSeedFor(run, node), 'combat'),
     rules: run.rules,
     weave: weaveSnapshot(run),
     build: run.build,
   };
+}
+
+/**
+ * An authored actor re-levelled (GDD §12.1). Speed is untouched by rule: if
+ * enemy Speed grew with level, the whole queue-planning skill would degrade
+ * over a run.
+ */
+function rescale(actor: ActorSeed, level: number): ActorSeed {
+  const archetype = ARCHETYPES.find((entry) => actor.name.startsWith(entry.name));
+  return archetype === undefined ? actor : scaleEnemy(archetype, level, actor.id);
+}
+
+/** A distinct shuffle per node per fight, from the run's one seed (§20.2). */
+function combatSeedFor(run: RunState, node: MapNode): number {
+  let hash = run.seed | 0;
+  for (const part of [node.depth, node.rating, run.position.indexInNode, node.id.length]) {
+    hash = Math.imul(hash ^ part, 16777619);
+  }
+  for (const character of node.id) hash = Math.imul(hash ^ character.charCodeAt(0), 16777619);
+  return hash >>> 0;
 }
 
 export interface EncounterResult {
@@ -189,9 +227,20 @@ export interface EncounterResult {
   readonly baseXp: number;
 }
 
-/** [M2 STAND-IN] §11's Depths set this; the encounter chain stands in (D21). */
 function depthBase(run: RunState): number {
-  return depthOf(run) - 1;
+  return run.position.depth - 1;
+}
+
+/**
+ * GDD §7.1: one Ascendant and one Suppressed slot re-roll at the start of Depth
+ * 2 and Depth 3 — and nowhere else. Two shifts a run, announced at the end of
+ * the preceding Depth. Called by the flow when a Depth is entered.
+ */
+export function shiftForDepth(run: RunState, depth: number): RunState {
+  if (depth !== 2 && depth !== 3) return run;
+
+  const shifted = draw(run, 'weave', (rng) => shiftAttunement(rng, run.attunement));
+  return { ...run, attunement: shifted.value, streams: shifted.streams };
 }
 
 /**
@@ -284,8 +333,6 @@ export function absorbEncounter(run: RunState, result: EncounterResult): RunStat
   // granted by the reducer, because Insight is run-scoped and /sim cannot
   // reach it (docs/M1_PLAN.md D25).
   const paid = run.rules.ultimate === 'insight' ? ultimateKills(result.events) : 0;
-  const nextIndex = run.encounterIndex + 1;
-  const rested = startsChain(nextIndex);
 
   // GDD §5.2, §5.3. The level a fight was worth is the level of what was in
   // it, which §5.3 ties to Threat — so farming pushes enemies past you rather
@@ -297,24 +344,20 @@ export function absorbEncounter(run: RunState, result: EncounterResult): RunStat
 
   const banked: RunState = {
     ...grown,
-    encounterIndex: nextIndex,
-    threat: run.threat + THREAT_PER_NODE,
     // GDD §4.10: the wound carries. The chain boundary is M0's stand-in for a
     // Sanctum, and restoring to Max HP is what makes the socket cost bite —
     // it lowers the ceiling you are restored to, permanently.
-    hp: rested ? grown.maxHp : Math.min(result.hp, grown.maxHp),
+    // §11: the Sanctum is the rest now, not a chain boundary. A wound carries
+    // until the player spends a node on healing it (GDD §4.10 [AMD]).
+    hp: Math.min(result.hp, grown.maxHp),
     saturation: recordEncounter(run.saturation, dominant),
     materials: grantMaterial(run.materials, CLEAR_MATERIAL_TIER),
-    insight: run.insight + (nextIndex % INSIGHT_EVERY === 0 ? 1 : 0) + paid,
+    // Every other node, counting from the first — `threat % 2` would pay out
+    // on the opening fight, before the run has done anything to earn it.
+    insight: run.insight + ((run.threat + 1) % INSIGHT_EVERY === 0 ? 1 : 0) + paid,
   };
 
-  // GDD §7.1: one Ascendant and one Suppressed slot re-roll at the start of
-  // Depth 2 and Depth 3 — and nowhere else. Two shifts a run, by design.
-  const enteringNewDepth = rested && depthOf(banked) > depthOf(run);
-  if (!enteringNewDepth || depthOf(banked) > 3) return banked;
-
-  const shifted = draw(banked, 'weave', (rng) => shiftAttunement(rng, banked.attunement));
-  return { ...banked, attunement: shifted.value, streams: shifted.streams };
+  return banked;
 }
 
 /**

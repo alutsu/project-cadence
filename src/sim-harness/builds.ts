@@ -1,21 +1,12 @@
-import {
-  absorbEncounter,
-  craft,
-  encounterSetup,
-  maxHpFloor,
-  NORMAL_BASE_XP,
-  openSocket,
-  seat,
-  startRun,
-  type RunState,
-} from '../run/RunState.ts';
+import { craft, maxHpFloor, openSocket, seat, startRun, type RunState } from '../run/RunState.ts';
+import { DEPTH_COUNT } from '../run/map.ts';
+import { advanceRun, viewOf, type RunIntent, type RunView } from '../run/runFlow.ts';
 import { socketPrice, socketsOf } from '../run/socket.ts';
-import { advanceToDecision, reduce, startCombat } from '../sim/combat.ts';
+import { advanceToDecision, reduce, startCombat, type CombatSetup } from '../sim/combat.ts';
 import type { CombatEvent } from '../sim/events.ts';
 import { FRAMES, type Frame } from '../sim/gem.ts';
 import type { CardId } from '../sim/ids.ts';
 import { createRng, type Rng } from '../sim/rng.ts';
-import { ENCOUNTERS } from '../data/encounters.ts';
 import { POLICIES, type Policy } from './policy.ts';
 
 /**
@@ -131,8 +122,8 @@ interface FightResult {
 }
 
 /** One encounter, played to its end by a policy. */
-function fightOne(run: RunState, policy: Policy): FightResult {
-  const started = startCombat(encounterSetup(run));
+function fightOne(setup: CombatSetup, run: RunState, policy: Policy): FightResult {
+  const started = startCombat(setup);
   const opening = advanceToDecision(started.state);
   const events: CombatEvent[] = [...started.events, ...opening.events];
   let state = opening.state;
@@ -153,7 +144,12 @@ function fightOne(run: RunState, policy: Policy): FightResult {
   };
 }
 
-/** One whole run: build between fights, play each one to its end. */
+/**
+ * One whole run, played through **the same reducer the game uses** (§20.3's
+ * argument, one layer up). Node choices, rests and fights all go through
+ * `advanceRun`, so a balance number here measures the shipping flow rather than
+ * a parallel re-implementation of it that drifts.
+ */
 export function playRun(spec: {
   readonly policy: Policy;
   readonly builder: Builder;
@@ -163,20 +159,29 @@ export function playRun(spec: {
   const rng = createRng(spec.seed, 'gemRoll');
   let cleared = 0;
 
-  for (const _ of ENCOUNTERS) {
-    void _;
+  for (let step = 0; step < FLOW_LIMIT; step += 1) {
+    const view = viewOf(run);
+    if (view.kind === 'summary') break;
+
+    // Deliberately greedy and unthinking: it takes the first thing offered. A
+    // builder that read the Omen before choosing would be a *policy* decision
+    // and belongs beside the others, not hidden in the driver.
+    const routing = routeFrom(view);
+    if (routing !== null) {
+      run = advanceRun(run, routing).run;
+      continue;
+    }
+    if (view.kind !== 'encounter') break;
+
     run = spec.builder(run, rng);
+    const fought = fightOne(view.setup, run, spec.policy);
+    const won = fought.outcome === 'won';
+    if (won) cleared += 1;
 
-    const fought = fightOne(run, spec.policy);
-    if (fought.outcome !== 'won') break;
-
-    cleared += 1;
-    run = absorbEncounter(run, {
-      outcome: 'won',
-      hp: fought.hp,
-      events: fought.events,
-      baseXp: NORMAL_BASE_XP,
-    });
+    run = advanceRun(run, {
+      kind: 'finishEncounter',
+      result: { won, hp: fought.hp, events: fought.events },
+    }).run;
   }
 
   const frames = Object.values(run.build.sockets)
@@ -186,7 +191,7 @@ export function playRun(spec: {
 
   return {
     cleared,
-    won: cleared === ENCOUNTERS.length,
+    won: run.position.depth > DEPTH_COUNT,
     frames,
     maxHp: run.maxHp,
     hitFloor: run.maxHp <= maxHpFloor(run),
@@ -194,6 +199,19 @@ export function playRun(spec: {
     level: run.level,
     deck: run.deck.length,
   };
+}
+
+/** A run is roughly twenty nodes; this only catches a flow that cannot end. */
+const FLOW_LIMIT = 400;
+
+/** How the driver moves through everything that is not a fight. */
+function routeFrom(view: RunView): RunIntent | null {
+  if (view.kind === 'sanctum') return { kind: 'rest' };
+  if (view.kind === 'market') return { kind: 'leaveNode' };
+  if (view.kind !== 'map') return null;
+
+  const node = view.offered[0];
+  return node === undefined ? null : { kind: 'enterNode', node: node.id };
 }
 
 /** The signature of a build: which frames, sorted, so order is not identity. */

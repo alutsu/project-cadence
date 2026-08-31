@@ -3,7 +3,7 @@ import { PLAYER, RAT } from '../../src/data/encounters.ts';
 import {
   absorbEncounter,
   depthOf,
-  encounterSetup,
+  encounterSetupFor,
   maxHpFloor,
   NORMAL_BASE_XP,
   openSocket,
@@ -27,6 +27,9 @@ import {
 import type { CombatEvent } from '../../src/sim/events.ts';
 import { cardId, type CardId } from '../../src/sim/ids.ts';
 import { createRng } from '../../src/sim/rng.ts';
+import type { CombatSetup } from '../../src/sim/combat.ts';
+import { depthMapAt } from '../../src/run/map.ts';
+import { advanceRun, viewOf, type RunIntent, type RunView } from '../../src/run/runFlow.ts';
 import { SATURATION_CAP, saturationOf } from '../../src/sim/saturation.ts';
 import { TAGS, type Tag } from '../../src/sim/tag.ts';
 import { tick } from '../../src/sim/tick.ts';
@@ -53,6 +56,34 @@ function clear(run: RunState, events: readonly CombatEvent[]): RunState {
   return absorbEncounter(run, result);
 }
 
+/**
+ * A whole run walked through the flow, winning every fight (GDD §11).
+ * Takes the first node offered each time, which is enough to reach the Boss and
+ * therefore enough to exercise the Depth transitions §7.1 hangs its shifts on.
+ */
+function walkRun(seed: number, events: readonly CombatEvent[] = []): RunState {
+  let run = startRun(seed);
+
+  for (let step = 0; step < 400; step += 1) {
+    const view = viewOf(run);
+    if (view.kind === 'summary') break;
+    run = advanceRun(run, intentFor(view, events)).run;
+  }
+
+  return run;
+}
+
+function intentFor(view: RunView, events: readonly CombatEvent[]): RunIntent {
+  if (view.kind === 'map') {
+    const node = view.offered[0];
+    if (node === undefined) throw new Error('a Depth offered nothing');
+    return { kind: 'enterNode', node: node.id };
+  }
+  if (view.kind === 'sanctum') return { kind: 'rest' };
+  if (view.kind === 'market') return { kind: 'leaveNode' };
+  return { kind: 'finishEncounter', result: { won: true, hp: 40, events } };
+}
+
 describe('a seed means the same run twice (GDD §20.2, §13)', () => {
   it('rolls the same Attunement', () => {
     expect(startRun(7).attunement).toEqual(startRun(7).attunement);
@@ -73,10 +104,21 @@ describe('a seed means the same run twice (GDD §20.2, §13)', () => {
   it('leaves the weave stream at a fixed position for a fixed seed', () => {
     // docs/M1_PLAN.md D32: a shift draws a fixed number of times whatever it
     // picks. A position that depended on the outcome could not be resumed.
-    let run = startRun(3);
-    for (let fight = 0; fight < 6; fight += 1) run = clear(run, [blow('Frost', 8)]);
+    const walked = walkRun(3, [blow('Frost', 8)]);
 
-    expect(run.streams.weave.position).toBe(startRun(3).streams.weave.position + 8);
+    // Four draws for the opening roll, then four per shift at Depths 2 and 3.
+    expect(walked.streams.weave.position).toBe(startRun(3).streams.weave.position + 8);
+  });
+
+  it('lays out the same map for the same seed, and a different one otherwise', () => {
+    expect(startRun(12).map).toEqual(startRun(12).map);
+    expect(startRun(12).map).not.toEqual(startRun(13).map);
+  });
+
+  it('draws the whole map at run start, so the route cannot move the stream', () => {
+    // §20.2: a Depth generated on arrival would make the position depend on
+    // which nodes were taken, and a resumed run would land in another world.
+    expect(walkRun(19).streams.map).toEqual(startRun(19).streams.map);
   });
 });
 
@@ -107,8 +149,10 @@ describe('the Attunement roll (GDD §7.1)', () => {
     let run = startRun(21);
     const seen = [run.attunement];
 
-    for (let fight = 0; fight < 6; fight += 1) {
-      run = clear(run, [blow('Storm', 5)]);
+    for (let step = 0; step < 400; step += 1) {
+      const view = viewOf(run);
+      if (view.kind === 'summary') break;
+      run = advanceRun(run, intentFor(view, [])).run;
       seen.push(run.attunement);
     }
 
@@ -170,8 +214,8 @@ describe('Saturation follows the damage, not the intent (GDD §7.3)', () => {
   });
 });
 
-describe('the run carries a wound, and rests between chains (GDD §4.10)', () => {
-  it('takes the surviving HP into the next fight of a chain', () => {
+describe('the run carries a wound; the Sanctum is the rest (GDD §4.10, §11)', () => {
+  it('takes the surviving HP onward — nothing heals between fights', () => {
     const run = startRun(9);
     const wounded = absorbEncounter(run, {
       outcome: 'won',
@@ -183,40 +227,48 @@ describe('the run carries a wound, and rests between chains (GDD §4.10)', () =>
     expect(wounded.hp).toBe(40);
   });
 
-  it('restores to the run’s own Max HP at a chain boundary, whatever it is', () => {
-    // Deliberately not a literal. A socket lowers Max HP (§6.1) and a level
-    // raises it (§5.1), so the only stable statement is that a rest fills the
-    // pool the run currently has — which is the rule §4.10 actually states.
+  it('fills the pool at a Sanctum, and never raises the pool itself (§6.1)', () => {
+    // A Sanctum that restored Max HP would refund the one cost §6.1 charges.
     const run: RunState = { ...startRun(9), maxHp: 58, hp: 12 };
-    const first = absorbEncounter(run, {
-      outcome: 'won',
-      hp: 12,
-      events: [],
-      baseXp: NORMAL_BASE_XP,
-    });
-    const second = absorbEncounter(first, {
-      outcome: 'won',
-      hp: 8,
-      events: [],
-      baseXp: NORMAL_BASE_XP,
-    });
+    const depth = depthMapAt(run.map, run.position.depth);
+    const sanctum = depth.offered.find((node) => node.kind === 'sanctum');
+    if (sanctum === undefined) throw new Error('the Depth offers no Sanctum');
 
-    expect(second.hp).toBe(second.maxHp);
-    expect(second.maxHp).toBeGreaterThanOrEqual(58);
+    const entered = advanceRun(run, { kind: 'enterNode', node: sanctum.id }).run;
+    const rested = advanceRun(entered, { kind: 'rest' }).run;
+
+    expect(rested.hp).toBe(58);
+    expect(rested.maxHp).toBe(58);
   });
 
-  it('does not advance a run that was lost', () => {
-    const run = startRun(9);
-    expect(
-      absorbEncounter(run, { outcome: 'lost', hp: 0, events: [], baseXp: NORMAL_BASE_XP }),
-    ).toBe(run);
+  it('ends the run on a loss, immediately (§13)', () => {
+    let run = startRun(9);
+    const depth = depthMapAt(run.map, run.position.depth);
+    const dungeon = depth.offered.find((node) => node.kind === 'dungeon');
+    if (dungeon === undefined) throw new Error('the Depth offers no dungeon');
+
+    run = advanceRun(run, { kind: 'enterNode', node: dungeon.id }).run;
+    const dead = advanceRun(run, {
+      kind: 'finishEncounter',
+      result: { won: false, hp: 0, events: [] },
+    }).run;
+
+    expect(viewOf(dead)).toEqual({ kind: 'summary', won: false });
   });
 });
+
+/** The setup for the first fight the run walks into (GDD §11). */
+function firstEncounter(run: RunState): CombatSetup {
+  const depth = depthMapAt(run.map, run.position.depth);
+  const dungeon = depth.offered.find((node) => node.kind === 'dungeon');
+  if (dungeon === undefined) throw new Error('the Depth offers no dungeon');
+  return encounterSetupFor(run, dungeon);
+}
 
 describe('what the run hands to combat', () => {
   it('gives the player the run’s own HP and Max HP', () => {
     const run: RunState = { ...startRun(4), hp: 33, maxHp: 52 };
-    const player = encounterSetup(run).actors.find((actor) => actor.side === 'player');
+    const player = firstEncounter(run).actors.find((actor) => actor.side === 'player');
 
     expect(player?.hp).toBe(33);
     expect(player?.maxHp).toBe(52);
@@ -224,13 +276,11 @@ describe('what the run hands to combat', () => {
 
   it('hands over the Weave the run currently believes in', () => {
     const run = startRun(4);
-    expect(encounterSetup(run).weave).toEqual(weaveSnapshot(run));
+    expect(firstEncounter(run).weave).toEqual(weaveSnapshot(run));
   });
 
   it('knows which Depth it is in', () => {
     expect(depthOf(startRun(1))).toBe(1);
-    expect(depthOf({ ...startRun(1), encounterIndex: 2 })).toBe(2);
-    expect(depthOf({ ...startRun(1), encounterIndex: 5 })).toBe(3);
   });
 
   it('states the §6.1 Max HP floor as an absolute number', () => {
@@ -351,12 +401,18 @@ describe('levels, XP and Threat (GDD §5.1–5.3)', () => {
     expect(maxHpFloor(levelled)).toBeGreaterThan(maxHpFloor(run));
   });
 
-  it('raises Threat per node, so enemies climb to meet you (§5.3)', () => {
-    let run = startRun(31);
-    const before = run.threat;
-    run = clear(run, []);
+  it('raises Threat per node entered, so enemies climb to meet you (§5.3)', () => {
+    const run = startRun(31);
+    const depth = depthMapAt(run.map, run.position.depth);
+    const dungeon = depth.offered.find((node) => node.kind === 'dungeon');
+    const sanctum = depth.offered.find((node) => node.kind === 'sanctum');
+    if (dungeon === undefined || sanctum === undefined) throw new Error('Depth is malformed');
 
-    expect(run.threat).toBe(before + 1);
+    // A Dungeon raises it; a rest costs a node instead (§11).
+    expect(advanceRun(run, { kind: 'enterNode', node: dungeon.id }).run.threat).toBe(
+      run.threat + 1,
+    );
+    expect(advanceRun(run, { kind: 'enterNode', node: sanctum.id }).run.threat).toBe(run.threat);
     // enemy_level = depth_base + floor(Threat / 2)
     expect(enemyLevel(0, 0)).toBe(0);
     expect(enemyLevel(0, 3)).toBe(1);

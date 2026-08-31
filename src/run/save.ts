@@ -12,7 +12,9 @@ import {
 } from '../sim/gem.ts';
 import { isRegisteredEffect } from '../sim/gemEffects.ts';
 import type { Materials } from './materials.ts';
-import { cardId, gemId } from '../sim/ids.ts';
+import { cardId, gemId, nodeId } from '../sim/ids.ts';
+import { createRng } from '../sim/rng.ts';
+import { digestOf, generateMap, type RunPosition } from './map.ts';
 import type { RngState, RngStreamName } from '../sim/rng.ts';
 import { ULTIMATE_RULES, type CombatRules } from '../sim/rules.ts';
 import { isTag, TAGS, type Tag } from '../sim/tag.ts';
@@ -51,7 +53,9 @@ export const CURRENT_SAVE_VERSION = 1;
  */
 export interface SaveV1 {
   readonly seed: number;
-  readonly encounterIndex: number;
+  /** §16: the map is regenerated from the seed; this refuses a changed one. */
+  readonly mapDigest: number;
+  readonly position: RunPosition;
   readonly level: number;
   readonly xp: number;
   readonly threat: number;
@@ -111,7 +115,8 @@ export interface SaveEnvelope {
 export function toSnapshot(run: RunState): SaveV1 {
   return {
     seed: run.seed,
-    encounterIndex: run.encounterIndex,
+    mapDigest: digestOf(run.map),
+    position: run.position,
     level: run.level,
     xp: run.xp,
     threat: run.threat,
@@ -327,7 +332,6 @@ export function fromSnapshot(raw: unknown): ParseResult<RunState> {
 
   const numbers = [
     'seed',
-    'encounterIndex',
     'level',
     'xp',
     'threat',
@@ -343,6 +347,17 @@ export function fromSnapshot(raw: unknown): ParseResult<RunState> {
     if (typeof read === 'string') errors.push(read);
   }
   if (errors.length > 0) return { ok: false, errors };
+
+  // §16, D40: the map is derived, so it is regenerated rather than read — and
+  // the stored digest is what refuses a save laid out by a different generator
+  // instead of silently resuming into a different world.
+  const map = generateMap(createRng(Number(raw.seed), 'map'));
+  if (raw.mapDigest !== digestOf(map)) {
+    return { ok: false, errors: ['the save was laid out by a different map generator'] };
+  }
+
+  const position = readPosition(raw.position);
+  if (typeof position === 'string') return { ok: false, errors: [position] };
 
   const streams = readStreams(raw.streams);
   if (typeof streams === 'string') return { ok: false, errors: [streams] };
@@ -377,7 +392,8 @@ export function fromSnapshot(raw: unknown): ParseResult<RunState> {
     ok: true,
     value: {
       seed: Number(raw.seed),
-      encounterIndex: Number(raw.encounterIndex),
+      map,
+      position,
       level: Number(raw.level),
       xp: Number(raw.xp),
       threat: Number(raw.threat),
@@ -417,6 +433,29 @@ function readSaturation(value: unknown): readonly (Tag | null)[] | string {
 
 function isUnknownArray(value: unknown): value is readonly unknown[] {
   return Array.isArray(value);
+}
+
+function readPosition(value: unknown): RunPosition | string {
+  if (!isRecord(value)) return '"position" is not an object';
+
+  const depth = readNumber(value.depth, 'position.depth');
+  const indexInNode = readNumber(value.indexInNode, 'position.indexInNode');
+  if (typeof depth === 'string') return depth;
+  if (typeof indexInNode === 'string') return indexInNode;
+
+  const taken = readStrings(value.taken ?? [], 'position.taken');
+  if (typeof taken === 'string') return taken;
+
+  const node: unknown = value.node ?? null;
+  if (node !== null && typeof node !== 'string') return '"position.node" is not a node';
+
+  return {
+    depth,
+    taken: taken.map(nodeId),
+    node: node === null ? null : nodeId(node),
+    indexInNode,
+    dead: value.dead === true,
+  };
 }
 
 function readMaterials(value: unknown): Materials | string {

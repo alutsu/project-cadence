@@ -5,6 +5,9 @@
 export type ActorId = string & { readonly __brand: 'ActorId' };
 export type CardId = string & { readonly __brand: 'CardId' };
 export type GemId = string & { readonly __brand: 'GemId' };
+/** A place on the map (GDD §11). Branded for the same reason the rest are:
+ * a node id and a card id are both strings and are never interchangeable. */
+export type NodeId = string & { readonly __brand: 'NodeId' };
 
 function requireNonEmpty(value: string, kind: string): string {
   if (value.length === 0) throw new RangeError(`${kind} must not be empty`);
@@ -21,4 +24,8 @@ export function cardId(value: string): CardId {
 
 export function gemId(value: string): GemId {
   return requireNonEmpty(value, 'GemId') as GemId;
+}
+
+export function nodeId(value: string): NodeId {
+  return requireNonEmpty(value, 'NodeId') as NodeId;
 }

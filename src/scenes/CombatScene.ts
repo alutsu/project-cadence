@@ -1,15 +1,9 @@
 import Phaser from 'phaser';
-import { CHAIN_SIZE, ENCOUNTERS, PLAYER, startsChain } from '../data/encounters.ts';
+import { PLAYER } from '../data/encounters.ts';
 import type { Action } from '../sim/actions.ts';
-import {
-  absorbEncounter,
-  encounterSetup,
-  NORMAL_BASE_XP,
-  performForgeAction,
-  restartRun,
-  startRun,
-  type RunState,
-} from '../run/RunState.ts';
+import { performForgeAction, restartRun, startRun, type RunState } from '../run/RunState.ts';
+import { advanceRun, viewOf, type RunIntent, type RunView } from '../run/runFlow.ts';
+import { DEPTH_COUNT } from '../run/map.ts';
 import { FRAMES, type Frame } from '../sim/gem.ts';
 import { ForgeScreen, type ForgeAction } from '../ui/ForgeScreen.ts';
 import { WeavePanel } from '../ui/WeavePanel.ts';
@@ -72,7 +66,7 @@ export class CombatScene extends Phaser.Scene {
    * reference and never a copy — it reads the run and hands it back, so no game
    * number lives on a Phaser object (CLAUDE.md §4.1).
    */
-  private run: RunState = startRun(SESSION_SEED);
+  private run: RunState = toNextEncounter(startRun(SESSION_SEED)).run;
   private animations = true;
   private readonly session = new SessionLog();
   /**
@@ -268,12 +262,15 @@ export class CombatScene extends Phaser.Scene {
       return;
     }
 
-    this.run = absorbEncounter(this.run, {
-      outcome: this.state.outcome,
-      hp: findActor(this.state, PLAYER)?.hp ?? this.run.hp,
-      events: this.encounterEvents,
-      baseXp: NORMAL_BASE_XP,
+    const finished = advanceRun(this.run, {
+      kind: 'finishEncounter',
+      result: {
+        won: true,
+        hp: findActor(this.state, PLAYER)?.hp ?? this.run.hp,
+        events: this.encounterEvents,
+      },
     });
+    this.run = toNextEncounter(finished.run).run;
     this.restart();
   }
 
@@ -334,11 +331,10 @@ export class CombatScene extends Phaser.Scene {
     keys.on('keydown-N', () => {
       // A debug jump, not a cleared fight: enter the next encounter whole, so
       // it can be read on its own terms.
-      this.run = {
-        ...this.run,
-        encounterIndex: (this.run.encounterIndex + 1) % ENCOUNTERS.length,
-        hp: this.run.maxHp,
-      };
+      // A debug jump: leave the node whole and take the next thing offered.
+      this.run = toNextEncounter(
+        advanceRun({ ...this.run, hp: this.run.maxHp }, { kind: 'leaveNode' }).run,
+      ).run;
       this.restart();
     });
   }
@@ -618,8 +614,8 @@ export class CombatScene extends Phaser.Scene {
     else views.readout.render('', null);
     views.piles.render(this.state);
     views.banner.render(
-      encounterAt(this.run.encounterIndex).name,
-      `${encounterAt(this.run.encounterIndex).teaches}   ·   ${this.chainLabel()}   ·   seed ${String(SESSION_SEED)}`,
+      this.nodeLabel(),
+      `${this.depthLabel()}   ·   seed ${String(SESSION_SEED)}`,
       this.state.outcome === 'won' ? this.endOfEncounterSummary() : '',
     );
     views.tuning.render(this.run.rules, {
@@ -656,14 +652,32 @@ export class CombatScene extends Phaser.Scene {
 
   /** What the gate's questions need, counted rather than remembered (§7). */
   /**
-   * P3/P5: HP carrying between fights is only a real cost if the player can see
-   * it coming. The label names the chain and where the next restore is.
+   * Which node this is, and what it advertised before it was entered (§11).
+   * The Omen is the only thing a Dungeon shows in advance, so it belongs where
+   * the player is already looking.
    */
-  private chainLabel(): string {
-    const position = (this.run.encounterIndex % CHAIN_SIZE) + 1;
-    const remaining = CHAIN_SIZE - position;
-    const rest = remaining === 0 ? 'rest after this' : `${String(remaining)} more before rest`;
-    return `fight ${String(position)}/${String(CHAIN_SIZE)} on this health · ${rest}`;
+  private nodeLabel(): string {
+    const view = viewOf(this.run);
+    if (view.kind !== 'encounter') return 'the road';
+
+    const omen = view.node.omen;
+    const hint = omen === null ? '' : `  ·  omen: ${omen.kind} ${omen.tag}`;
+    return `${view.node.elite ? 'elite ' : ''}${view.node.kind}${hint}`;
+  }
+
+  /**
+   * P3/P5: the wound carrying is only a real cost if the player can see how far
+   * there is to go. The label names the Depth, the fight within the node, and
+   * the Threat the route has built up (§5.3).
+   */
+  private depthLabel(): string {
+    const view = viewOf(this.run);
+    const fight = this.run.position.indexInNode + 1;
+    const of = view.kind === 'encounter' ? view.node.encounters : 1;
+    return (
+      `depth ${String(this.run.position.depth)}/${String(DEPTH_COUNT)}` +
+      `  ·  fight ${String(fight)}/${String(of)}  ·  threat ${String(this.run.threat)}`
+    );
   }
 
   private endOfEncounterSummary(): string {
@@ -689,12 +703,10 @@ export class CombatScene extends Phaser.Scene {
    */
   private deathReport(): DeathReport {
     const totals = this.session.totals(Object.keys(this.state.catalogue).map(cardId));
-    const encounter = encounterAt(this.run.encounterIndex);
-    const position = this.run.encounterIndex + 1;
 
     return {
       cause: this.causeOfDeath(),
-      reached: `fell on fight ${String(position)} of ${String(ENCOUNTERS.length)} — ${encounter.name}`,
+      reached: `fell at depth ${String(this.run.position.depth)} of ${String(DEPTH_COUNT)}, on threat ${String(this.run.threat)}`,
       played:
         `${String(totals.cardsPlayed)} cards · ${String(totals.waits)} waits · ` +
         `${String(totals.staggers)} staggers · ${String(totals.damageTaken)} damage taken`,
@@ -719,16 +731,12 @@ export class CombatScene extends Phaser.Scene {
 
   /** What you take into the next fight — the whole point of §4.10. */
   private carryLine(): string {
-    if (this.state.outcome === 'lost') return 'the set restarts from the first fight';
+    if (this.state.outcome === 'lost') return 'the run ends here';
 
     const hp = findActor(this.state, PLAYER)?.hp ?? 0;
-    const next = (this.run.encounterIndex + 1) % ENCOUNTERS.length;
-    return startsChain(next)
-      ? // The run's Max HP, not the baseline: a socket lowers the ceiling you
-        // are restored to (GDD §6.1), and a rest that promised 70 would be
-        // lying about the one cost the build layer actually charges.
-        `you rest — the next fight starts at ${String(this.run.maxHp)} HP`
-      : `you carry ${String(hp)} HP into the next fight`;
+    // §11: the Sanctum is the rest now, and it costs a node. Nothing restores
+    // you between fights any more, which is what makes the choice a choice.
+    return `you carry ${String(hp)} HP onward`;
   }
 
   private teardown(): void {
@@ -767,12 +775,6 @@ interface LandedBlow {
 /** GDD §4.3: the beat before Wait is taken for the player. */
 const AUTO_WAIT_DELAY_MS = 1500;
 
-function encounterAt(index: number): (typeof ENCOUNTERS)[number] {
-  const encounter = ENCOUNTERS[index % ENCOUNTERS.length];
-  if (encounter === undefined) throw new Error('the encounter set is empty');
-  return encounter;
-}
-
 function outcomeWord(outcome: CombatState['outcome']): string {
   return outcome === 'won' ? 'cleared' : 'you died';
 }
@@ -801,8 +803,46 @@ interface Opening {
  * Which cards, which Weave, which sockets, and what HP to enter on are all
  * facts about the run (CLAUDE.md §4.1: a Scene is wiring).
  */
+/**
+ * The run walked forward until it is standing in a fight.
+ *
+ * [M2 STAND-IN] §11's map has a screen of its own in S6; until then the scene
+ * takes the first node on offer and rests when a Sanctum comes up, so the flow
+ * underneath is the real one even though the choice is not yet the player's.
+ */
+function toNextEncounter(run: RunState): { readonly run: RunState; readonly view: RunView } {
+  let current = run;
+
+  for (let step = 0; step < FLOW_STEPS; step += 1) {
+    const view = viewOf(current);
+    if (view.kind === 'encounter' || view.kind === 'summary') return { run: current, view };
+
+    const intent = intentFrom(view);
+    if (intent === null) return { run: current, view };
+    current = advanceRun(current, intent).run;
+  }
+
+  return { run: current, view: viewOf(current) };
+}
+
+/** A guard against a flow that cannot reach a fight; a run is ~20 nodes. */
+const FLOW_STEPS = 200;
+
+/** What the stand-in does at each non-combat view, or null if it is stuck. */
+function intentFrom(view: RunView): RunIntent | null {
+  if (view.kind === 'sanctum') return { kind: 'rest' };
+  if (view.kind === 'market') return { kind: 'leaveNode' };
+  if (view.kind !== 'map') return null;
+
+  const node = view.offered[0];
+  return node === undefined ? null : { kind: 'enterNode', node: node.id };
+}
+
 function openingState(run: RunState): Opening {
-  const started = startCombat(encounterSetup(run));
+  const view = viewOf(run);
+  if (view.kind !== 'encounter') throw new Error('the run is not standing in a fight');
+
+  const started = startCombat(view.setup);
   const opened = advanceToDecision(started.state);
   return { state: opened.state, events: [...started.events, ...opened.events] };
 }
