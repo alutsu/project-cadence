@@ -50,6 +50,10 @@ export function formatEvent(event: CombatEvent): string {
       return `${at} landed ${event.card}`;
     case 'staggered':
       return `${at} staggered ${event.actor} +${String(event.delay)}`;
+    case 'gem_triggered':
+      return `${at} gem ${event.gem} ${event.effect} on ${event.card}`;
+    case 'healed':
+      return `${at} healed ${event.actor} ${String(event.amount)}`;
     case 'actor_died':
       return `${at} died ${event.actor}`;
     case 'combat_ended':

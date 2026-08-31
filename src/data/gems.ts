@@ -95,6 +95,7 @@ const PROBE: CardDefinition = {
   damage: 1,
   targeting: 'single',
   tag: 'Physical',
+  applies: null,
 };
 
 function reasonOf(failure: unknown): string {

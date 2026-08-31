@@ -1,5 +1,5 @@
 {
-  "_comment": "Provisional M0 deck (GDD §5.1 [AMD], docs/M0_PLAN.md D1), carried into M1 with tags made live. Not a design commitment. Weight and Recovery are inherited from the class table in GDD §4.1 — a card never states them itself. M1 gives the deck its third axis: every card now carries exactly one of the six Weave tags (docs/M1_PLAN.md D15), so the Attunement roll has something to move. The tags are assigned to M0's seven cards rather than re-authored around them, which keeps this file a pure addition — same ids, same damage, same deck — and leaves the M0 golden log byte-identical. The spread that results is inherited, not designed: Physical and Fire carry three deck slots each because M0 repeated Lunge three times, while Shadow and Arcane carry one. Designing it is the job of the real 16-skill table GDD §5.1 still owes, where the tag is chosen with the card instead of after it.",
+  "_comment": "Provisional M0 deck (GDD §5.1 [AMD], docs/M0_PLAN.md D1), carried into M1 with tags made live. Not a design commitment. Weight and Recovery are inherited from the class table in GDD §4.1 — a card never states them itself. M1 gives the deck its third axis: every card now carries exactly one of the six Weave tags (docs/M1_PLAN.md D15), so the Attunement roll has something to move. The tags are assigned to M0's seven cards rather than re-authored around them, which keeps this file a pure addition — same ids, same damage, same deck — and leaves the M0 golden log byte-identical. The spread that results is inherited, not designed: Physical and Fire carry three deck slots each because M0 repeated Lunge three times, while Shadow and Arcane carry one. Designing it is the job of the real 16-skill table GDD §5.1 still owes, where the tag is chosen with the card instead of after it. [M1/S4] Cleave carries Burn (docs/M1_PLAN.md D34). Burn was built in M0's S5 and has been dormant ever since — no enemy applies it — and LINGER (GDD §6.2) has nothing to extend unless some card inflicts something. Cleave is the Fire card, so the status it carries writes itself, and giving it one turns two authored frames from vapour into things the gate can actually judge.",
   "cards": [
     {
       "id": "lunge",
@@ -29,7 +29,12 @@
       "class": "standard",
       "damage": 14,
       "targeting": "all",
-      "tag": "Fire"
+      "tag": "Fire",
+      "applies": {
+        "kind": "burn",
+        "magnitude": 2,
+        "duration": 20
+      }
     },
     {
       "id": "crush",

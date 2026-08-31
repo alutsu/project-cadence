@@ -1,4 +1,4 @@
-import type { ActorId, CardId } from './ids.ts';
+import type { ActorId, CardId, GemId } from './ids.ts';
 import type { StatusKind } from './status.ts';
 import type { Tag } from './tag.ts';
 import type { Tick } from './tick.ts';
@@ -105,5 +105,18 @@ export type CombatEvent =
       readonly landsAt: Tick;
     }
   | { readonly kind: 'strike_landed'; readonly at: Tick; readonly card: CardId }
+  | {
+      readonly kind: 'gem_triggered';
+      readonly at: Tick;
+      readonly gem: GemId;
+      readonly card: CardId;
+      readonly effect: string;
+    }
+  | {
+      readonly kind: 'healed';
+      readonly at: Tick;
+      readonly actor: ActorId;
+      readonly amount: number;
+    }
   | { readonly kind: 'actor_died'; readonly at: Tick; readonly actor: ActorId }
   | { readonly kind: 'combat_ended'; readonly at: Tick; readonly outcome: 'won' | 'lost' };

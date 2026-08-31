@@ -1,5 +1,6 @@
 import type { CardDefinition } from './card.ts';
-import type { GemEffect } from './gem.ts';
+import { FRESH_RUNTIME, type GemEffect, type GemRuntime } from './gem.ts';
+import type { ActorId, CardId } from './ids.ts';
 import type { Tag } from './tag.ts';
 
 /**
@@ -44,6 +45,16 @@ export interface CardModifier {
    * conversion has to happen before the Weave is consulted, not after.
    */
   readonly convertTag: Tag | null;
+  /** Sum. WARD: the card also grants Guard (GDD §6.2, §4.4). */
+  readonly guardGain: number;
+  /** Sum, a share of damage dealt. SIPHON heals it back (GDD §6.2). */
+  readonly lifestealShare: number;
+  /** Product. LINGER's drawback: longer, but weaker (GDD §6.2). */
+  readonly statusMagnitudeMult: number;
+  /** Product. LINGER: the status it applies lasts longer. */
+  readonly statusDurationMult: number;
+  /** OR. ECHO: the card returns to hand instead of the Cooldown pile (§4.9). */
+  readonly returnsToHand: boolean;
 }
 
 /** A card with nothing seated in it. The identity of `foldModifiers`. */
@@ -55,6 +66,11 @@ export const NO_MODIFIER: CardModifier = {
   poiseFactor: 1,
   staggerBonus: 0,
   convertTag: null,
+  guardGain: 0,
+  lifestealShare: 0,
+  statusMagnitudeMult: 1,
+  statusDurationMult: 1,
+  returnsToHand: false,
 };
 
 export function foldModifiers(left: CardModifier, right: CardModifier): CardModifier {
@@ -66,6 +82,11 @@ export function foldModifiers(left: CardModifier, right: CardModifier): CardModi
     poiseFactor: left.poiseFactor * right.poiseFactor,
     staggerBonus: left.staggerBonus + right.staggerBonus,
     convertTag: right.convertTag ?? left.convertTag,
+    guardGain: left.guardGain + right.guardGain,
+    lifestealShare: left.lifestealShare + right.lifestealShare,
+    statusMagnitudeMult: left.statusMagnitudeMult * right.statusMagnitudeMult,
+    statusDurationMult: left.statusDurationMult * right.statusDurationMult,
+    returnsToHand: left.returnsToHand || right.returnsToHand,
   };
 }
 
@@ -83,7 +104,40 @@ export interface EffectInput {
   /** Set only by the atoms that name a tag; null everywhere else. */
   readonly tag: Tag | null;
   readonly card: CardDefinition;
+  /** What this gem has accumulated this fight (GDD §6.2: SPEND reads it). */
+  readonly runtime: GemRuntime;
 }
+
+/**
+ * What happened, for the frames that accumulate. Deliberately small: a handler
+ * that could ask arbitrary questions of the state would be a handler that could
+ * answer them differently on a preview than on a commit.
+ */
+export type FrameTrigger =
+  | { readonly kind: 'played'; readonly card: CardId }
+  | {
+      readonly kind: 'hit';
+      readonly card: CardId;
+      readonly target: ActorId;
+      readonly amount: number;
+    }
+  | { readonly kind: 'killed'; readonly card: CardId; readonly target: ActorId };
+
+export interface ReactionInput {
+  readonly value: number;
+  readonly runtime: GemRuntime;
+  readonly trigger: FrameTrigger;
+}
+
+/** What a reaction did: the gem's new counters, and anything it handed back. */
+export interface EffectOutcome {
+  readonly runtime: GemRuntime;
+  /** SIPHON (GDD §6.2). Healing the source, never the target. */
+  readonly heal: number;
+  readonly guard: number;
+}
+
+export const NO_OUTCOME: EffectOutcome = { runtime: FRESH_RUNTIME, heal: 0, guard: 0 };
 
 /**
  * A discriminated union with one member today (CLAUDE.md §3.2).
@@ -93,11 +147,19 @@ export interface EffectInput {
  * that adding it is additive rather than a rewrite of every handler, and so the
  * two phases can never be confused for optional methods on one shape (§4.3).
  */
-export type EffectHandler = {
-  readonly type: string;
-  readonly phase: 'modify';
-  readonly modify: (input: EffectInput) => CardModifier;
-};
+export type EffectHandler =
+  | {
+      readonly type: string;
+      readonly phase: 'modify';
+      readonly modify: (input: EffectInput) => CardModifier;
+    }
+  | {
+      readonly type: string;
+      readonly phase: 'react';
+      /** Which triggers this atom answers; everything else passes it by. */
+      readonly on: readonly FrameTrigger['kind'][];
+      readonly react: (input: ReactionInput) => EffectOutcome;
+    };
 
 const HANDLERS = new Map<string, EffectHandler>();
 
@@ -125,14 +187,44 @@ export function effectHandler(type: string): EffectHandler {
   return handler;
 }
 
-/** Every atom a gem's effects and affixes add up to, in the order listed. */
-export function modifierOf(effects: readonly GemEffect[], card: CardDefinition): CardModifier {
-  return effects.reduce(
-    (total, effect) =>
-      foldModifiers(
-        total,
-        effectHandler(effect.type).modify({ value: effect.value, tag: effect.tag, card }),
-      ),
-    NO_MODIFIER,
+/**
+ * Every modify atom a gem's effects and affixes add up to, in the order listed.
+ * React atoms contribute nothing here — they answer to what happens, not to
+ * what the card is.
+ */
+export function modifierOf(
+  effects: readonly GemEffect[],
+  card: CardDefinition,
+  runtime: GemRuntime = FRESH_RUNTIME,
+): CardModifier {
+  return effects.reduce((total, effect) => {
+    const handler = effectHandler(effect.type);
+    if (handler.phase !== 'modify') return total;
+    return foldModifiers(
+      total,
+      handler.modify({ value: effect.value, tag: effect.tag, card, runtime }),
+    );
+  }, NO_MODIFIER);
+}
+
+/** What a gem's react atoms make of one trigger, folded in listed order. */
+export function reactionOf(
+  effects: readonly GemEffect[],
+  trigger: FrameTrigger,
+  runtime: GemRuntime,
+): EffectOutcome {
+  return effects.reduce<EffectOutcome>(
+    (total, effect) => {
+      const handler = effectHandler(effect.type);
+      if (handler.phase !== 'react' || !handler.on.includes(trigger.kind)) return total;
+
+      const outcome = handler.react({ value: effect.value, runtime: total.runtime, trigger });
+      return {
+        runtime: outcome.runtime,
+        heal: total.heal + outcome.heal,
+        guard: total.guard + outcome.guard,
+      };
+    },
+    { runtime, heal: 0, guard: 0 },
   );
 }

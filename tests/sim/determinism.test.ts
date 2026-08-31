@@ -124,6 +124,9 @@ describe('determinism (GDD §20.2, CLAUDE.md §7.2)', () => {
       't23 played player cleave w6',
       't23 damage player -> rat 8 Fire',
       't23 staggered rat +1',
+      // Cleave carries Burn (docs/M1_PLAN.md D34) — machinery M0 built in S5
+      // and never used, because no enemy applied it and no card could.
+      't23 burn rat 2',
       't23 cooldown cleave -> t37',
       't23 scheduled player -> t29',
       't27 returned lunge',
@@ -132,6 +135,8 @@ describe('determinism (GDD §20.2, CLAUDE.md §7.2)', () => {
       't27 intent rat Gnaw',
       't27 damage rat -> player 2',
       't27 scheduled rat -> t31',
+      // Burn runs on its own five-tick clock, like Poison (GDD §4.5).
+      't28 burn rat ticks 2',
       't29 turn player',
       't29 drew lunge',
     ]);
@@ -144,6 +149,6 @@ describe('determinism (GDD §20.2, CLAUDE.md §7.2)', () => {
     // rat outlives all four cards (docs/M1_PLAN.md D22, D27).
     expect(state.outcome).toBe('ongoing');
     expect(findActor(state, PLAYER)?.hp).toBe(57);
-    expect(findActor(state, RAT)?.hp).toBe(5);
+    expect(findActor(state, RAT)?.hp).toBe(3);
   });
 });

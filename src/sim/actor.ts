@@ -1,6 +1,6 @@
 import type { ActorId } from './ids.ts';
 import { actionDelay, effectiveSpeed } from './speed.ts';
-import { speedModifier, type Status, type StatusKind } from './status.ts';
+import { speedModifier, type Status, type StatusApplication } from './status.ts';
 import type { Tick } from './tick.ts';
 import type { ResistanceTable } from './weave.ts';
 
@@ -16,13 +16,6 @@ export interface Intent {
   readonly damage: number;
   /** A status the intent inflicts on its target, if any (GDD §4.5). */
   readonly applies: StatusApplication | null;
-}
-
-export interface StatusApplication {
-  readonly kind: StatusKind;
-  readonly magnitude: number;
-  /** Ticks the status lasts, or null when it ends by running out (Poison). */
-  readonly duration: Tick | null;
 }
 
 export interface Actor {
@@ -74,6 +67,20 @@ export function nextIntentIndex(actor: Actor): number {
 
 export function isAlive(actor: Actor): boolean {
   return actor.hp > 0;
+}
+
+/**
+ * A corpse carries nothing forward.
+ *
+ * Statuses resolve on the timeline rather than in an actor's turn (GDD §4.5),
+ * and `procActor` rightly skips the dead — but that left a killed actor holding
+ * a `nextProcAt` that had already gone by, which breaks the invariant that no
+ * scheduled effect ever sits in the past (CLAUDE.md §7.1). Dormant through M0,
+ * where only the player was ever afflicted and their death ended the encounter;
+ * live the moment a card could Burn something that then dies of it.
+ */
+export function settleDeath(actor: Actor): Actor {
+  return isAlive(actor) || actor.statuses.length === 0 ? actor : { ...actor, statuses: [] };
 }
 
 /** Base Speed plus every Haste and Slow currently on the actor (GDD §4.5). */

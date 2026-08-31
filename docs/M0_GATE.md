@@ -16,7 +16,7 @@ of M0 is whatever the answers say, including "stop".
 ## 1. What to run
 
 ```bash
-npm run dev        # http://localhost:5173
+npm run dev        # http://localhost:8080
 ```
 
 Or play the deployed build at **<https://alutsu.github.io/project-cadence/>**,

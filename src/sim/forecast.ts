@@ -1,6 +1,7 @@
 import type { Action } from './actions.ts';
 import type { Actor, Intent } from './actor.ts';
 import { advanceToDecision, reduce } from './combat.ts';
+import { advanceTime } from './effects.ts';
 import { absorb, decayGuard } from './guard.ts';
 import type { ActorId } from './ids.ts';
 import { actionDelay } from './speed.ts';
@@ -49,9 +50,28 @@ export function forecastQueue(
   const forecast: QueueSlot[] = [];
   let pool = state.actors.filter(isAlive);
 
+  // A clone walked forward beside the projection, so "will this actor still be
+  // standing when its turn comes?" is answered by the real effect resolution
+  // rather than by a second copy of the damage-over-time math (CLAUDE.md §2.2).
+  //
+  // Dormant through M0: only the player was ever afflicted, and their death
+  // ends the encounter rather than removing a slot. A card that Burns an enemy
+  // makes it load-bearing — a strip that lists a turn the burning thing will
+  // not live to take is a strip that lies, and §4.2 is the whole game.
+  let settled = state;
+
   while (forecast.length < slots) {
     const acting = nextToAct(pool);
     if (acting === null) break;
+
+    if (acting.nextActTick > settled.now) {
+      settled = advanceTime(settled, acting.nextActTick).state;
+    }
+    const standing = findActor(settled, acting.id);
+    if (standing === undefined || !isAlive(standing)) {
+      pool = pool.filter((actor) => actor.id !== acting.id);
+      continue;
+    }
 
     forecast.push({
       actor: acting.id,

@@ -1,4 +1,4 @@
-import { isAlive, type Actor } from './actor.ts';
+import { isAlive, settleDeath, type Actor } from './actor.ts';
 import type { CombatEvent } from './events.ts';
 import { decayGuard } from './guard.ts';
 import { applyDamage, resolveHit } from './strike.ts';
@@ -167,10 +167,10 @@ function procActor(state: CombatState, id: Actor['id'], at: Tick): CombatStep {
   const statuses = actor.statuses.map((status) =>
     due.includes(status) ? advanceProc(status, at) : status,
   );
-  const alive: Actor = { ...actor, hp, statuses: statuses.filter(isLive) };
+  const stepped: Actor = { ...actor, hp, statuses: statuses.filter(isLive) };
   if (hp === 0) events.push({ kind: 'actor_died', at, actor: id });
 
-  return { state: withActor(state, alive), events };
+  return { state: withActor(state, settleDeath(stepped)), events };
 }
 
 /** Poison loses one magnitude per proc; Burn does not (GDD §4.5). */

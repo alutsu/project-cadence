@@ -1,4 +1,5 @@
 import type { CardId } from './ids.ts';
+import type { StatusApplication } from './status.ts';
 import type { Tag } from './tag.ts';
 import type { Tick } from './tick.ts';
 import type { WeightClass } from './weightClass.ts';
@@ -28,6 +29,15 @@ export interface CardDefinition {
    * two multipliers and no answer to give the player before they commit (P3).
    */
   readonly tag: Tag;
+  /**
+   * What the card inflicts, or null for the ones that only hit (GDD §4.5).
+   *
+   * Cards had none of these in M0 because M0's statuses all came from enemy
+   * intents. LINGER needs one to extend (GDD §6.2), and a frame with nothing to
+   * act on is a frame that cannot be judged at the gate — see docs/M1_PLAN.md
+   * D34.
+   */
+  readonly applies: StatusApplication | null;
 }
 
 /** Cards addressed by id. A plain record, so CombatState stays serializable. */

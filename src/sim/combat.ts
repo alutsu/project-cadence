@@ -6,7 +6,6 @@ import {
   nextIntentIndex,
   type Actor,
   type Intent,
-  type StatusApplication,
 } from './actor.ts';
 import { findCard, type CardCatalogue, type CardDefinition } from './card.ts';
 import { advanceTime } from './effects.ts';
@@ -19,7 +18,8 @@ import type { ActorId, CardId } from './ids.ts';
 import { BASE_SPEED, actionDelay, combatSeedTick, drawsOnAction, effectiveSpeed } from './speed.ts';
 import { strikeTargets } from './targeting.ts';
 import { nextToAct } from './timeline.ts';
-import { EMPTY_BUILD, type BuildState } from './gem.ts';
+import { EMPTY_BUILD, freshBuild, runtimeOf, type BuildState, type GemRuntime } from './gem.ts';
+import { reactionOf, type FrameTrigger } from './gemEffects.ts';
 import { resolveCard, type ResolvedCard } from './resolve.ts';
 import { applyDamage, resolveHit, resolveIntent } from './strike.ts';
 import {
@@ -31,7 +31,13 @@ import {
   type CombatStep,
   type PendingStrike,
 } from './state.ts';
-import { POISON_INTERVAL, isPeriodic, magnitudeOf, type Status } from './status.ts';
+import {
+  POISON_INTERVAL,
+  isPeriodic,
+  magnitudeOf,
+  type Status,
+  type StatusApplication,
+} from './status.ts';
 import { addTicks, TICK_ZERO, tick, type Tick } from './tick.ts';
 import { NEUTRAL_WEAVE, NO_RESISTANCE, type ResistanceTable, type WeaveSnapshot } from './weave.ts';
 
@@ -89,7 +95,9 @@ export function startCombat(setup: CombatSetup): CombatStep {
     now: TICK_ZERO,
     rules: setup.rules ?? DEFAULT_RULES,
     weave: setup.weave ?? NEUTRAL_WEAVE,
-    build: setup.build ?? EMPTY_BUILD,
+    // Every seated gem starts the encounter at zero: a charge is earned in
+    // the fight it is spent in (GDD §6.2).
+    build: freshBuild(setup.build ?? EMPTY_BUILD),
     pending: [],
     actors,
     catalogue: setup.catalogue,
@@ -281,6 +289,64 @@ function strikeAll(state: CombatState, order: StrikeOrder): CombatStep {
   return { state: current, events };
 }
 
+/**
+ * What a gem's react atoms make of one thing that happened (GDD §6.2).
+ *
+ * Folded in socket order, writing each gem's counters back into the build. Heal
+ * and Guard are returned rather than applied here, so the caller decides who
+ * receives them — a SIPHON heals whoever swung, not whoever was hit.
+ */
+function react(state: CombatState, trigger: FrameTrigger): ReactionStep {
+  const seated = state.build.sockets[trigger.card]?.gems ?? [];
+  if (seated.length === 0) return { state, events: [], heal: 0, guard: 0 };
+
+  const events: CombatEvent[] = [];
+  const runtime: Record<string, GemRuntime> = { ...state.build.runtime };
+  let heal = 0;
+  let guard = 0;
+
+  for (const id of seated) {
+    const gem = state.build.gems[id];
+    if (gem === undefined) continue;
+
+    const before = runtimeOf(state.build, id);
+    const outcome = reactionOf([...gem.effects, ...gem.affixes], trigger, before);
+    if (outcome.runtime === before && outcome.heal === 0 && outcome.guard === 0) continue;
+
+    runtime[id] = outcome.runtime;
+    heal += outcome.heal;
+    guard += outcome.guard;
+    events.push({
+      kind: 'gem_triggered',
+      at: state.now,
+      gem: id,
+      card: trigger.card,
+      effect: trigger.kind,
+    });
+  }
+
+  return { state: { ...state, build: { ...state.build, runtime } }, events, heal, guard };
+}
+
+interface ReactionStep extends CombatStep {
+  readonly heal: number;
+  readonly guard: number;
+}
+
+/** SIPHON's payout (GDD §6.2), capped by the pool it is refilling. */
+function heal(state: CombatState, actor: Actor, amount: number): CombatStep {
+  if (amount <= 0) return { state, events: [] };
+
+  const current = currentActor(state, actor);
+  const restored = Math.min(current.maxHp, current.hp + amount);
+  if (restored === current.hp) return { state, events: [] };
+
+  return {
+    state: withActor(state, { ...current, hp: restored }),
+    events: [{ kind: 'healed', at: state.now, actor: actor.id, amount: restored - current.hp }],
+  };
+}
+
 /** One sweep of a card across everything it reaches (GDD §4.8). */
 function strikeOnce(state: CombatState, order: StrikeOrder): CombatStep {
   const events: CombatEvent[] = [];
@@ -300,9 +366,75 @@ function strikeOnce(state: CombatState, order: StrikeOrder): CombatStep {
     const struck = applyDamage(current, { source: order.attacker.id, target, hit });
     current = struck.state;
     events.push(...struck.events);
+
+    // GDD §4.5: what the card inflicts lands on what it hit, stretched by any
+    // LINGER already folded into the resolution.
+    const inflicted = applyApplication(current, target, order.resolved.applies);
+    current = inflicted.state;
+    events.push(...inflicted.events);
+
+    const died = struck.events.some((event) => event.kind === 'actor_died');
+    const answered = respond(current, {
+      card: order.resolved.card,
+      attacker: order.attacker,
+      target,
+      amount: hit.amount,
+      died,
+    });
+    current = answered.state;
+    events.push(...answered.events);
   }
 
   return { state: current, events };
+}
+
+interface BlowResponse {
+  readonly card: CardId;
+  readonly attacker: Actor;
+  readonly target: ActorId;
+  readonly amount: number;
+  readonly died: boolean;
+}
+
+/** What the seated gems make of a blow: SIPHON's heal, CHARGE's charge. */
+function respond(state: CombatState, blow: BlowResponse): CombatStep {
+  const events: CombatEvent[] = [];
+  const hit = react(state, {
+    kind: 'hit',
+    card: blow.card,
+    target: blow.target,
+    amount: blow.amount,
+  });
+  let current = hit.state;
+  events.push(...hit.events);
+
+  const drained = heal(current, blow.attacker, hit.heal);
+  current = drained.state;
+  events.push(...drained.events);
+
+  if (!blow.died) return { state: current, events };
+
+  const killed = react(current, { kind: 'killed', card: blow.card, target: blow.target });
+  return { state: killed.state, events: [...events, ...killed.events] };
+}
+
+/** A status the card carries, applied to whatever it just struck (GDD §4.5). */
+function applyApplication(
+  state: CombatState,
+  target: ActorId,
+  application: StatusApplication | null,
+): CombatStep {
+  const struck = findActor(state, target);
+  if (application === null || struck === undefined || !isAlive(struck)) {
+    return { state, events: [] };
+  }
+
+  return applyStatus(state, target, {
+    kind: application.kind,
+    magnitude: application.magnitude,
+    expiresAt: application.duration === null ? null : addTicks(state.now, application.duration),
+    nextProcAt: isPeriodic(application.kind) ? addTicks(state.now, tick(POISON_INTERVAL)) : null,
+  });
 }
 
 /** Applies an intent's status to the player, if it carries one (GDD §4.5). */
@@ -450,18 +582,26 @@ export function advanceOneTurn(state: CombatState): Advance {
     events.push(...closed.events);
     if (current.outcome !== 'ongoing') return settled(current, events);
 
-    // A corpse still holds a slot until time reaches it; nothing to show for it.
-    if (!isAlive(next)) continue;
+    // Re-read after the advance, not before it. `next` is the snapshot the
+    // scheduler picked from, and the time that just elapsed may have killed the
+    // actor it names — a Burn that lands on the tick before its turn. Checking
+    // the stale copy let a corpse take a turn (GDD §4.5: statuses resolve on
+    // the timeline, so they resolve *between* the pick and the turn).
+    //
+    // Dormant through M0, where nothing but the player ever took damage over
+    // time and the player's death ends the encounter instead of skipping a slot.
+    const acting = findActor(current, next.id);
+    if (acting === undefined || !isAlive(acting)) continue;
 
-    if (next.side === 'player') {
-      const opened = openPlayerTurn(current, next);
+    if (acting.side === 'player') {
+      const opened = openPlayerTurn(current, acting);
       return settled(opened.state, [...events, ...opened.events]);
     }
 
-    const step = resolveEnemyTurn(current, next);
+    const step = resolveEnemyTurn(current, acting);
     return {
       kind: 'turn',
-      actor: next.id,
+      actor: acting.id,
       step: { state: step.state, events: [...events, ...step.events] },
     };
   }
@@ -603,7 +743,30 @@ function commitPlay(
     ? commitPending(bled.state, { actor, resolved, target })
     : strikeAll(bled.state, { attacker: actor, resolved, chosen: target.id });
 
-  const cooled = sendToCooldown(struck.state, { card: card.id, recovery: resolved.recovery });
+  // WARD (GDD §6.2): the card puts Guard up as well as landing (§4.4).
+  const warded =
+    resolved.guardGain > 0
+      ? withActor(
+          struck.state,
+          gainGuard(
+            currentActor(struck.state, actor),
+            resolved.guardGain,
+            struck.state.rules.guardCap,
+          ),
+        )
+      : struck.state;
+  const wardEvents: readonly CombatEvent[] =
+    resolved.guardGain > 0
+      ? [{ kind: 'guard_gained', at, actor: actor.id, amount: resolved.guardGain }]
+      : [];
+
+  // ECHO (GDD §6.2): back to hand rather than onto the Recovery clock. The
+  // once-per-fight gate is already folded into `returnsToHand` by the time it
+  // reaches here — the gem read its own counter when the card was resolved.
+  const played = react(warded, { kind: 'played', card: card.id });
+  const cooled = resolved.returnsToHand
+    ? { state: played.state, events: [] }
+    : sendToCooldown(played.state, { card: card.id, recovery: resolved.recovery });
   const committed = windup ? WINDUP_COMMIT_WEIGHT : resolved.weight;
   const acted = withActor(
     cooled.state,
@@ -621,6 +784,8 @@ function commitPlay(
       { kind: 'card_played', at, actor: actor.id, card: card.id, weight: resolved.weight },
       ...bled.events,
       ...struck.events,
+      ...wardEvents,
+      ...played.events,
       ...cooled.events,
       scheduledEvent(acted, actor.id, at),
     ]),

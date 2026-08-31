@@ -7,7 +7,14 @@ import { advanceToDecision, reduce, startCombat } from '../../src/sim/combat.ts'
 import type { CombatEvent } from '../../src/sim/events.ts';
 import { cardId, gemId, type CardId } from '../../src/sim/ids.ts';
 import { createRng } from '../../src/sim/rng.ts';
-import { EMPTY_BUILD, FRAMES, GEM_TIERS, type BuildState, type Gem } from '../../src/sim/gem.ts';
+import {
+  EMPTY_BUILD,
+  FRAMES,
+  freshBuild,
+  GEM_TIERS,
+  type BuildState,
+  type Gem,
+} from '../../src/sim/gem.ts';
 import { previewAction } from '../../src/sim/forecast.ts';
 import { resolveCard } from '../../src/sim/resolve.ts';
 import { NEUTRAL_WEAVE } from '../../src/sim/weave.ts';
@@ -42,12 +49,13 @@ function gem(id: string, fields: Partial<Gem>): Gem {
 }
 
 function build(card: CardId, ...gems: readonly Gem[]): BuildState {
-  return {
+  return freshBuild({
     gems: Object.fromEntries(gems.map((entry) => [entry.id, entry])),
     sockets: {
       [card]: { opened: gems.length, gems: gems.map((entry) => entry.id), scarred: false },
     },
-  };
+    runtime: {},
+  });
 }
 
 function opened(options: {

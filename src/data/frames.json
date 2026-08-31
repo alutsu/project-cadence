@@ -1,5 +1,5 @@
 {
-  "_comment": "Gem frames (GDD §6.2). A frame is a recipe, not code (docs/M1_PLAN.md D33): it names which registered effect atoms it rolls and the range each rolls in, per tier. Crafting reads this in S4; S3 authors it and validates it. Only the four modify-phase frames are here — CHARGE, SPEND, SIPHON, ECHO, WARD and LINGER all accumulate across a fight and arrive with the react phase in S4, together with the atoms they need. Every frame carries a real drawback, which §6.2 requires and §10 explains: a pure upgrade creates a known-correct ranking, which is the meta this design exists to avoid. Ranges are provisional and are what the S8 balance pass moves first.",
+  "_comment": "Gem frames (GDD §6.2). A frame is a recipe, not code (docs/M1_PLAN.md D33): it names which registered effect atoms it rolls and the range each rolls in, per tier. All ten frames are here. Every one carries a real drawback, which §6.2 requires and §10 explains: a pure upgrade creates a known-correct ranking, which is exactly the meta this design exists to avoid. Ranges are provisional and are the first thing the S8 balance pass moves. Two frames read their own per-fight counters rather than a rolled range — CHARGE stores on a kill and SPEND consumes what it stored — so their paired atoms roll fixed values.",
   "frames": [
     {
       "id": "REPEAT",
@@ -124,6 +124,174 @@
             [-0.05, 0],
             [0, 0.05],
             [0.05, 0.12]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "CHARGE",
+      "effect": "Gain a Charge on kill",
+      "drawback": "Dead socket until charged",
+      "rolls": [
+        {
+          "type": "CHARGE_ON_KILL",
+          "tiers": [
+            [1, 1],
+            [1, 1],
+            [1, 1],
+            [1, 2]
+          ]
+        },
+        {
+          "type": "DAMAGE_MULT",
+          "tiers": [
+            [-0.15, -0.1],
+            [-0.12, -0.08],
+            [-0.1, -0.05],
+            [-0.08, -0.03]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "SPEND",
+      "effect": "Consume Charges for damage",
+      "drawback": "Dead without a Charge source",
+      "rolls": [
+        {
+          "type": "SPEND_CHARGES",
+          "tiers": [
+            [0.25, 0.35],
+            [0.35, 0.5],
+            [0.5, 0.7],
+            [0.7, 1.0]
+          ]
+        },
+        {
+          "type": "CONSUME_CHARGES",
+          "tiers": [
+            [0, 0],
+            [0, 0],
+            [0, 0],
+            [0, 0]
+          ]
+        },
+        {
+          "type": "DAMAGE_MULT",
+          "tiers": [
+            [-0.3, -0.25],
+            [-0.28, -0.22],
+            [-0.25, -0.18],
+            [-0.2, -0.15]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "SIPHON",
+      "effect": "Heal % of damage dealt",
+      "drawback": "-Damage",
+      "rolls": [
+        {
+          "type": "SIPHON_HIT",
+          "tiers": [
+            [0.15, 0.2],
+            [0.2, 0.3],
+            [0.3, 0.4],
+            [0.4, 0.55]
+          ]
+        },
+        {
+          "type": "DAMAGE_MULT",
+          "tiers": [
+            [-0.35, -0.3],
+            [-0.32, -0.26],
+            [-0.28, -0.22],
+            [-0.25, -0.18]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ECHO",
+      "effect": "Card returns to hand instead of Cooldown, once a fight",
+      "drawback": "+Recovery permanently",
+      "rolls": [
+        {
+          "type": "RETURN_TO_HAND",
+          "tiers": [
+            [0, 0],
+            [0, 0],
+            [0, 0],
+            [0, 0]
+          ]
+        },
+        {
+          "type": "MARK_USED",
+          "tiers": [
+            [0, 0],
+            [0, 0],
+            [0, 0],
+            [0, 0]
+          ]
+        },
+        {
+          "type": "RECOVERY_DELTA",
+          "tiers": [
+            [8, 12],
+            [7, 10],
+            [5, 8],
+            [4, 6]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "WARD",
+      "effect": "Card also grants Guard",
+      "drawback": "+Weight",
+      "rolls": [
+        {
+          "type": "GUARD_GAIN",
+          "tiers": [
+            [3, 5],
+            [5, 8],
+            [8, 12],
+            [12, 16]
+          ]
+        },
+        {
+          "type": "WEIGHT_DELTA",
+          "tiers": [
+            [2, 3],
+            [2, 3],
+            [1, 2],
+            [1, 2]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "LINGER",
+      "effect": "Extend status durations",
+      "drawback": "-Status magnitude",
+      "rolls": [
+        {
+          "type": "STATUS_DURATION",
+          "tiers": [
+            [0.3, 0.5],
+            [0.5, 0.8],
+            [0.8, 1.2],
+            [1.2, 1.8]
+          ]
+        },
+        {
+          "type": "STATUS_MAGNITUDE",
+          "tiers": [
+            [-0.4, -0.35],
+            [-0.35, -0.3],
+            [-0.3, -0.22],
+            [-0.25, -0.18]
           ]
         }
       ]

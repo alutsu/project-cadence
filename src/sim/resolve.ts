@@ -1,5 +1,5 @@
 import type { CardDefinition, CardTargeting } from './card.ts';
-import { EMPTY_BUILD, gemsIn, type BuildState, type Gem } from './gem.ts';
+import { EMPTY_BUILD, gemsIn, runtimeOf, type BuildState, type Gem } from './gem.ts';
 import { foldModifiers, modifierOf, NO_MODIFIER, type CardModifier } from './gemEffects.ts';
 // Imported for its registrations, not for a binding. The registry is only
 // Open/Closed if it is *populated* — a consumer that forgets this import gets a
@@ -8,6 +8,7 @@ import { foldModifiers, modifierOf, NO_MODIFIER, type CardModifier } from './gem
 // Adding an atom still costs one line in that module and no edit here.
 import './standardEffects.ts';
 import type { CardId } from './ids.ts';
+import type { StatusApplication } from './status.ts';
 import type { Tag } from './tag.ts';
 import { damagePerTarget } from './targeting.ts';
 import { tick, type Tick } from './tick.ts';
@@ -47,6 +48,14 @@ export interface ResolvedCard {
   readonly poiseFactor: number;
   /** BREAK: added to the first Stagger before the ladder halves it (§4.6). */
   readonly staggerBonus: number;
+  /** WARD: Guard the card puts up when it is played (GDD §6.2, §4.4). */
+  readonly guardGain: number;
+  /** SIPHON: the share of damage dealt that comes back as health. */
+  readonly lifestealShare: number;
+  /** ECHO: back to hand rather than onto the Recovery clock (GDD §4.9). */
+  readonly returnsToHand: boolean;
+  /** What the card inflicts, already stretched and weakened by LINGER. */
+  readonly applies: StatusApplication | null;
 }
 
 /**
@@ -73,15 +82,40 @@ function riddenWeight(base: Tick, weave: WeaveSnapshot, tag: Tag): Tick {
 }
 
 /** Every gem seated in the card, folded in socket order (docs/M1_PLAN.md D33). */
-function seatedModifier(card: CardDefinition, gems: readonly Gem[]): CardModifier {
-  return gems.reduce(
-    (total, gem) =>
-      foldModifiers(
-        foldModifiers(total, { ...NO_MODIFIER, weightDelta: gem.weightDelta }),
-        foldModifiers(modifierOf(gem.effects, card), modifierOf(gem.affixes, card)),
-      ),
-    NO_MODIFIER,
-  );
+function seatedModifier(
+  card: CardDefinition,
+  gems: readonly Gem[],
+  build: BuildState,
+): CardModifier {
+  return gems.reduce((total, gem) => {
+    const runtime = runtimeOf(build, gem.id);
+    return foldModifiers(
+      foldModifiers(total, { ...NO_MODIFIER, weightDelta: gem.weightDelta }),
+      foldModifiers(modifierOf(gem.effects, card, runtime), modifierOf(gem.affixes, card, runtime)),
+    );
+  }, NO_MODIFIER);
+}
+
+/**
+ * LINGER (GDD §6.2): longer, but weaker. The duration stretches and the
+ * magnitude shrinks, and a status can never be stretched into nothing — a
+ * magnitude rounded to zero would be a status that expires having done nothing,
+ * which reads as a bug rather than as a trade.
+ */
+function lingered(
+  application: StatusApplication | null,
+  modifier: CardModifier,
+): StatusApplication | null {
+  if (application === null) return null;
+
+  return {
+    kind: application.kind,
+    magnitude: Math.max(1, Math.round(application.magnitude * modifier.statusMagnitudeMult)),
+    duration:
+      application.duration === null
+        ? null
+        : tick(Math.max(1, Math.round(application.duration * modifier.statusDurationMult))),
+  };
 }
 
 /** Everything about a play that does not depend on who receives it. */
@@ -90,7 +124,7 @@ export function resolveCard(
   card: CardDefinition,
   build: BuildState = EMPTY_BUILD,
 ): ResolvedCard {
-  const modifier = seatedModifier(card, gemsIn(build, card.id));
+  const modifier = seatedModifier(card, gemsIn(build, card.id), build);
 
   // KINDLE converts before the Weave is consulted, because §6.2's drawback is
   // that the conversion "exposes you to that tag's Weave value" — the new tag
@@ -108,6 +142,10 @@ export function resolveCard(
     strikes: Math.max(MIN_STRIKES, 1 + modifier.extraStrikes),
     poiseFactor: modifier.poiseFactor,
     staggerBonus: modifier.staggerBonus,
+    guardGain: modifier.guardGain,
+    lifestealShare: modifier.lifestealShare,
+    returnsToHand: modifier.returnsToHand,
+    applies: lingered(card.applies, modifier),
   };
 }
 

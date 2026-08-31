@@ -11,7 +11,7 @@ import { findActor, type CombatState } from '../../src/sim/state.ts';
 import { damagePerTarget } from '../../src/sim/targeting.ts';
 import { damageAgainst } from '../../src/sim/strike.ts';
 import { gemId, type GemId } from '../../src/sim/ids.ts';
-import type { BuildState, CardSockets, Gem } from '../../src/sim/gem.ts';
+import { freshBuild, type BuildState, type CardSockets, type Gem } from '../../src/sim/gem.ts';
 import { TAGS } from '../../src/sim/tag.ts';
 import { NEUTRAL_WEAVE, type Attunement, type WeaveSnapshot } from '../../src/sim/weave.ts';
 
@@ -110,7 +110,7 @@ function randomBuild(rng: Rng, deck: readonly CardId[]): BuildState {
     sockets[card] = { opened, gems: seated, scarred: false };
   }
 
-  return { gems, sockets };
+  return freshBuild({ gems, sockets, runtime: {} });
 }
 
 /** A varied opening: a random subset of the encounter and a random hand. */

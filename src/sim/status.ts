@@ -17,10 +17,37 @@ export interface Status {
   readonly nextProcAt: Tick | null;
 }
 
+/**
+ * A status an action inflicts (GDD §4.5). Lives here rather than beside the
+ * actor that happens to carry one: an intent and a card can both apply the same
+ * thing, and neither is an actor.
+ */
+export interface StatusApplication {
+  readonly kind: StatusKind;
+  readonly magnitude: number;
+  /** Ticks the status lasts, or null when it ends by running out (Poison). */
+  readonly duration: Tick | null;
+}
+
 /** GDD §4.5: Poison and Burn both tick on a fixed five-tick clock. */
 export const POISON_INTERVAL = 5;
 export const BURN_INTERVAL = 5;
 export const BURN_DURATION = 20;
+
+const STATUS_KINDS: readonly string[] = [
+  'poison',
+  'burn',
+  'bleed',
+  'slow',
+  'haste',
+  'weaken',
+  'empower',
+  'brittle',
+];
+
+export function isStatusKind(value: unknown): value is StatusKind {
+  return typeof value === 'string' && STATUS_KINDS.includes(value);
+}
 
 /** Poison ignores Guard (GDD §4.5); Burn and Bleed do not. */
 export function ignoresGuard(kind: StatusKind): boolean {

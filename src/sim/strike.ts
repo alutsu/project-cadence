@@ -1,4 +1,4 @@
-import { isAlive, type Actor, type Intent } from './actor.ts';
+import { isAlive, settleDeath, type Actor, type Intent } from './actor.ts';
 import type { CardDefinition } from './card.ts';
 import type { CombatEvent } from './events.ts';
 import { absorb } from './guard.ts';
@@ -136,7 +136,7 @@ export function applyDamage(state: CombatState, order: DamageOrder): CombatStep 
   }
   if (!isAlive(wounded)) events.push({ kind: 'actor_died', at: state.now, actor: order.target });
 
-  return { state: withActor(state, shaken?.actor ?? wounded), events };
+  return { state: withActor(state, settleDeath(shaken?.actor ?? wounded)), events };
 }
 
 /**

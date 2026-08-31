@@ -111,16 +111,46 @@ export interface CardSockets {
 export const NO_SOCKETS: CardSockets = { opened: 0, gems: [], scarred: false };
 
 /**
+ * What a gem has accumulated *this fight* (GDD §6.2: CHARGE gains charges on a
+ * kill, ECHO fires once). Generic counters the frames interpret, rather than a
+ * field per frame — a frame that needs a third counter is a design change, and
+ * should look like one.
+ *
+ * Rebuilt at `startCombat` and never carried between encounters, which is what
+ * keeps a charge from surviving a fight it was not earned in.
+ */
+export interface GemRuntime {
+  readonly charges: number;
+  readonly uses: number;
+}
+
+export const FRESH_RUNTIME: GemRuntime = { charges: 0, uses: 0 };
+
+/**
  * The build, as combat sees it. Keyed by card id, so a plain record survives
  * `structuredClone` and a save (CLAUDE.md §2.2 — no Map in a persisted shape).
  */
 export interface BuildState {
   readonly gems: GemCatalogue;
   readonly sockets: Readonly<Record<string, CardSockets>>;
+  readonly runtime: Readonly<Record<string, GemRuntime>>;
 }
 
 /** No sockets, no gems — every M0 test and the harness, unchanged. */
-export const EMPTY_BUILD: BuildState = { gems: {}, sockets: {} };
+export const EMPTY_BUILD: BuildState = { gems: {}, sockets: {}, runtime: {} };
+
+/** A build at the start of an encounter: every seated gem back to zero. */
+export function freshBuild(build: BuildState): BuildState {
+  const runtime: Record<string, GemRuntime> = {};
+  for (const sockets of Object.values(build.sockets)) {
+    for (const id of sockets.gems) runtime[id] = FRESH_RUNTIME;
+  }
+  return { ...build, runtime };
+}
+
+export function runtimeOf(build: BuildState, gem: GemId): GemRuntime {
+  return build.runtime[gem] ?? FRESH_RUNTIME;
+}
 
 /** What is actually seated in this card, in socket order. */
 export function gemsIn(build: BuildState, card: CardId): readonly Gem[] {

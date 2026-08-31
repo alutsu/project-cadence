@@ -1,6 +1,8 @@
 import type { CardCatalogue, CardDefinition, CardTargeting } from '../sim/card.ts';
 import { cardId, type CardId } from '../sim/ids.ts';
 import { isTag, type Tag } from '../sim/tag.ts';
+import { isStatusKind, type StatusApplication } from '../sim/status.ts';
+import { tick } from '../sim/tick.ts';
 import { WEIGHT_CLASSES, isWeightClass } from '../sim/weightClass.ts';
 import cardData from './cards.m0.json' with { type: 'json' };
 
@@ -20,6 +22,7 @@ interface RawCard {
   readonly damage: number;
   readonly targeting: CardTargeting;
   readonly tag: Tag;
+  readonly applies: StatusApplication | null;
 }
 
 function isTargeting(value: unknown): value is CardTargeting {
@@ -30,10 +33,32 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
+/**
+ * A status the card inflicts (GDD §4.5). Absent is the common case and means
+ * the card only hits; a malformed one fails at load rather than at combat time.
+ */
+function readApplication(value: unknown, id: string): StatusApplication | null | string {
+  if (value === undefined || value === null) return null;
+  if (!isRecord(value)) return `card "${id}" has an "applies" that is not an object`;
+
+  const { kind, magnitude, duration } = value;
+  if (!isStatusKind(kind)) return `card "${id}" applies an unknown status: ${JSON.stringify(kind)}`;
+  if (typeof magnitude !== 'number' || !Number.isInteger(magnitude) || magnitude <= 0) {
+    return `card "${id}" applies ${kind} with a non-positive magnitude`;
+  }
+
+  const lasts: unknown = duration ?? null;
+  if (lasts !== null && (typeof lasts !== 'number' || !Number.isInteger(lasts) || lasts <= 0)) {
+    return `card "${id}" applies ${kind} for an invalid duration`;
+  }
+
+  return { kind, magnitude, duration: lasts === null ? null : tick(lasts) };
+}
+
 function readCard(value: unknown, position: number): RawCard | string {
   if (!isRecord(value)) return `card ${String(position)} is not an object`;
 
-  const { id, name, class: weightClass, damage, targeting, tag } = value;
+  const { id, name, class: weightClass, damage, targeting, tag, applies } = value;
   if (typeof id !== 'string' || id.length === 0) return `card ${String(position)} has no id`;
   if (typeof name !== 'string' || name.length === 0) return `card "${id}" has no name`;
   if (!isWeightClass(weightClass))
@@ -54,7 +79,10 @@ function readCard(value: unknown, position: number): RawCard | string {
     return `card "${id}" has an unknown targeting: ${JSON.stringify(targeting)}`;
   }
 
-  return { id, name, class: weightClass, damage, targeting: reach, tag };
+  const inflicted = readApplication(applies, id);
+  if (typeof inflicted === 'string') return inflicted;
+
+  return { id, name, class: weightClass, damage, targeting: reach, tag, applies: inflicted };
 }
 
 function toDefinition(raw: RawCard): CardDefinition {
@@ -70,6 +98,7 @@ function toDefinition(raw: RawCard): CardDefinition {
     damage: raw.damage,
     targeting: raw.targeting,
     tag: raw.tag,
+    applies: raw.applies,
   };
 }
 
