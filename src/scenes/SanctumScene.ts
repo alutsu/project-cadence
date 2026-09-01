@@ -1,10 +1,11 @@
 import Phaser from 'phaser';
 import { performForgeAction, type RunState } from '../run/RunState.ts';
-import { FRAMES, type Frame } from '../sim/gem.ts';
+import { FRAMES, GEM_TIERS, type Frame, type GemTier } from '../sim/gem.ts';
 import type { CardId } from '../sim/ids.ts';
 import { ForgeScreen, type ForgeAction } from '../ui/ForgeScreen.ts';
 import { SanctumView } from '../ui/SanctumView.ts';
 import { COLORS } from '../ui/theme.ts';
+import { MATERIAL_NAMES, materialsHeld } from '../run/materials.ts';
 import { runSceneData, type Refreshable, type RunSceneData } from './sceneData.ts';
 
 /**
@@ -31,6 +32,14 @@ export class SanctumScene extends Phaser.Scene implements Refreshable {
   private frameIndex = 0;
   /** Why the last act did nothing, if it did nothing. */
   private notice = '';
+  /**
+   * Which tier `C` would craft, and `U` would upgrade.
+   *
+   * It was pinned to 1, which made every material above Shard unspendable —
+   * and `U`'s whole job is to turn three Shards into one of those. The ladder
+   * §9 defines had no top four rungs in practice.
+   */
+  private tier: GemTier = 1;
 
   constructor() {
     super('Sanctum');
@@ -123,7 +132,7 @@ export class SanctumScene extends Phaser.Scene implements Refreshable {
 
     const forgeAct = (kind: ForgeAction['kind'], frame: Frame | null = null): void => {
       if (this.forge?.isOpen() !== true) return;
-      this.forge.act({ kind, card: this.card, frame, tier: 1 }, this.run());
+      this.forge.act({ kind, card: this.card, frame, tier: this.tier }, this.run());
       this.render();
     };
 
@@ -133,6 +142,9 @@ export class SanctumScene extends Phaser.Scene implements Refreshable {
     });
     keys.on('keydown-Q', () => {
       this.cycleFrame();
+    });
+    keys.on('keydown-T', () => {
+      this.cycleTier();
     });
     keys.on('keydown-C', () => {
       forgeAct('craft', FRAMES[this.frameIndex] ?? 'REPEAT');
@@ -182,6 +194,16 @@ export class SanctumScene extends Phaser.Scene implements Refreshable {
     this.render();
   }
 
+  /** Which tier the next craft or upgrade uses. */
+  private cycleTier(): void {
+    if (this.forge?.isOpen() !== true) return;
+
+    const next = GEM_TIERS[(GEM_TIERS.indexOf(this.tier) + 1) % GEM_TIERS.length];
+    this.tier = next ?? 1;
+    this.notice = '';
+    this.render();
+  }
+
   private render(): void {
     if (this.payload?.view.kind !== 'sanctum') return;
 
@@ -189,6 +211,7 @@ export class SanctumScene extends Phaser.Scene implements Refreshable {
     this.forge?.render(this.run(), {
       selected: this.card,
       frame: FRAMES[this.frameIndex] ?? 'REPEAT',
+      tier: this.tier,
       notice: this.notice,
     });
   }
@@ -204,8 +227,15 @@ function refusalFor(action: ForgeAction, run: RunState): string {
   if (action.card === null && action.kind !== 'craft' && action.kind !== 'upgrade') {
     return 'pick a card first — press 1 to 7';
   }
-  if (action.kind === 'craft') return 'no material to craft with — win a fight first';
-  if (action.kind === 'upgrade') return 'three of one material are needed to make one of the next';
+  if (action.kind === 'craft') {
+    const name = MATERIAL_NAMES[action.tier];
+    return materialsHeld(run.materials) === 0
+      ? 'no materials at all — win a fight first'
+      : `no ${name} to craft with — press T for a tier you hold`;
+  }
+  if (action.kind === 'upgrade') {
+    return `three ${MATERIAL_NAMES[action.tier]} make one of the next tier, and you have fewer`;
+  }
   if (action.kind === 'seat') {
     return run.pouch.length === 0
       ? 'no gem to set — craft one with C'

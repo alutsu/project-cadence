@@ -1,7 +1,9 @@
 import Phaser from 'phaser';
 import { socketPrice, socketsOf, type SocketPrice, type SocketRefusal } from '../run/socket.ts';
 import { maxHpFloor, socketRefusalFor, type RunState } from '../run/RunState.ts';
-import { GEM_TIERS, type Frame, type GemTier } from '../sim/gem.ts';
+import { FRAMES, GEM_TIERS, type Frame, type GemTier } from '../sim/gem.ts';
+import { frameTable, rangeAt, type FrameRoll } from '../data/frames.ts';
+import { MATERIAL_NAMES } from '../run/materials.ts';
 import type { CardId } from '../sim/ids.ts';
 import { COLORS, DANGER_INK, FONT, INK, LAYOUT, MUTED, PLAYER_INK, TYPE } from './theme.ts';
 
@@ -36,6 +38,7 @@ export interface ForgeAction {
 export interface ForgeSelection {
   readonly selected: CardId | null;
   readonly frame: Frame;
+  readonly tier: GemTier;
   /** Why the last act did nothing, if it did nothing. */
   readonly notice: string;
 }
@@ -58,6 +61,7 @@ export class ForgeScreen {
   private readonly options: ForgeOptions;
   private readonly view: Phaser.GameObjects.Container;
   private readonly body: Phaser.GameObjects.Text;
+  private readonly catalogue: Phaser.GameObjects.Text;
   private readonly prompt: Phaser.GameObjects.Text;
   private pending: Pending | null = null;
   private open = false;
@@ -86,6 +90,14 @@ export class ForgeScreen {
         lineSpacing: 8,
       })
       .setOrigin(0, 0);
+    this.catalogue = scene.add
+      .text(LAYOUT.forge.catalogueLeft, LAYOUT.forge.top, '', {
+        fontFamily: FONT,
+        fontSize: TYPE.forgeRow,
+        color: INK,
+        lineSpacing: 8,
+      })
+      .setOrigin(0, 0);
     this.prompt = scene.add
       .text(LAYOUT.width / 2, LAYOUT.forge.promptY, '', {
         fontFamily: FONT,
@@ -94,7 +106,7 @@ export class ForgeScreen {
       })
       .setOrigin(0.5, 0.5);
 
-    this.view.add([this.body, this.prompt]);
+    this.view.add([this.body, this.catalogue, this.prompt]);
     this.setOpen(false);
   }
 
@@ -140,6 +152,7 @@ export class ForgeScreen {
 
   render(run: RunState, showing: ForgeSelection): void {
     if (!this.open) return;
+    this.catalogue.setText(catalogueLines(run, showing).join('\n'));
     const { selected, frame, notice } = showing;
 
     this.body.setText(
@@ -204,8 +217,6 @@ function selectionLines(run: RunState, selected: CardId | null, frame: Frame): r
     `  X  take a gem out   ${seated.length > 0 ? 'destroys it — a removed gem is gone' : '— nothing set in this card'}`,
     `  R  reroll a gem's numbers   ${run.insight > 0 ? 'costs 1 insight, keeps the frame' : '— no insight'}`,
     `  U  three of a material become one of the next   ${held >= 3 ? 'ready' : '— not enough'}`,
-    '',
-    `  Q  the frame C would craft: ${frame}  —  ${FRAME_NOTES[frame]}`,
   ];
 }
 
@@ -242,6 +253,95 @@ function seatOffer(run: RunState, open: number, next: string | undefined): strin
 }
 
 /** One line each, because ten bare frame names told a playtester nothing. */
+/**
+ * The gem catalogue: every frame you could craft, listed at once.
+ *
+ * It used to be one frame at a time behind a cycling key, which is a list you
+ * cannot read — comparing ten options meant remembering nine of them. §6.3's
+ * anti-meta argument only works if the player can *see* the shapes on offer and
+ * still not know the numbers; hiding the shapes as well just makes crafting a
+ * lottery. So the frames and their drawbacks are all on screen, and the rolled
+ * values remain unknown until spent.
+ *
+ * P3 (value is unstable, not hidden) is why the selected frame shows its roll
+ * *ranges* at the chosen tier. The player commits knowing the spread and not
+ * the outcome, which is the intended trade and not a hidden one.
+ */
+function catalogueLines(run: RunState, showing: ForgeSelection): readonly string[] {
+  const { frame, tier } = showing;
+  const held = run.materials[tier];
+  const affordable = held > 0;
+
+  const rows = FRAMES.map((candidate) => {
+    const marker = candidate === frame ? '\u25b8' : ' ';
+    return `  ${marker} ${candidate.padEnd(8)} ${FRAME_NOTES[candidate]}`;
+  });
+
+  return [
+    'GEMS YOU CAN MAKE',
+    `  Q  moves the pick     T  changes tier`,
+    '',
+    ...rows,
+    '',
+    `  ${frame} at tier ${String(tier)} (${MATERIAL_NAMES[tier]}), if you craft it now:`,
+    ...rollLines(frame, tier),
+    '',
+    affordable
+      ? `  you hold ${String(held)} ${MATERIAL_NAMES[tier]}  —  press C to craft it`
+      : `  you hold no ${MATERIAL_NAMES[tier]}  —  T picks another tier`,
+  ];
+}
+
+/**
+ * What the selected frame would roll, at this tier. Ranges, never a single
+ * number: the frame is chosen and the values are not (§6.2).
+ */
+function rollLines(frame: Frame, tier: GemTier): readonly string[] {
+  const recipe = frameTable()[frame];
+  if (recipe === undefined) return ['    (no recipe)'];
+
+  const rolls = recipe.rolls.map((roll) => `    ${atomLine(roll, tier)}`);
+  return [...rolls, `    the cost of it: ${recipe.drawback}`];
+}
+
+function atomLine(roll: FrameRoll, tier: GemTier): string {
+  const { low, high } = rangeAt(roll, tier);
+  const label = ATOM_LABELS[roll.type] ?? roll.type.toLowerCase().replace(/_/gu, ' ');
+  return `${label.padEnd(22)} ${spread(low, high)}`;
+}
+
+/** A range reads as one number when it cannot vary, which most tiers cannot. */
+function spread(low: number, high: number): string {
+  const fixed = Number.isInteger(low) && Number.isInteger(high);
+  const show = (value: number): string =>
+    fixed ? String(value) : `${String(Math.round(value * 100))}%`;
+
+  return low === high ? show(low) : `${show(low)} to ${show(high)}`;
+}
+
+/**
+ * Plain English for each effect atom. The atom names are the registry's
+ * vocabulary (docs/M1_PLAN.md D33) and belong in code, not in a player's face.
+ */
+const ATOM_LABELS: Readonly<Record<string, string>> = {
+  EXTRA_STRIKE: 'extra strikes',
+  DAMAGE_MULT: 'damage',
+  WEIGHT_DELTA: 'Weight',
+  RECOVERY_DELTA: 'Recovery',
+  GUARD_GAIN: 'Guard granted',
+  SIPHON_HIT: 'healed per hit',
+  POISE_FACTOR: 'counted against Poise',
+  STAGGER_BONUS: 'extra Stagger',
+  STATUS_DURATION: 'status lasts',
+  STATUS_MAGNITUDE: 'status strength',
+  CONVERT_TAG: 'changes the tag to',
+  CHARGE_ON_KILL: 'charges stored on a kill',
+  CONSUME_CHARGES: 'charges spent',
+  SPEND_CHARGES: 'damage per charge',
+  RETURN_TO_HAND: 'returns to hand',
+  MARK_USED: 'once a fight',
+};
+
 const FRAME_NOTES: Readonly<Record<Frame, string>> = {
   REPEAT: 'strikes twice, each for less',
   CHARGE: 'stores a charge on a kill',

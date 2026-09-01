@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { PLAYER, RAT } from '../../src/data/encounters.ts';
+import { UPGRADE_COST } from '../../src/run/materials.ts';
 import {
   absorbEncounter,
   depthOf,
@@ -8,6 +9,7 @@ import {
   NORMAL_BASE_XP,
   openSocket,
   SIGNATURE_CARD,
+  performForgeAction,
   startRun,
   weaveSnapshot,
   type EncounterResult,
@@ -420,5 +422,43 @@ describe('levels, XP and Threat (GDD §5.1–5.3)', () => {
     expect(enemyLevel(0, 0)).toBe(0);
     expect(enemyLevel(0, 3)).toBe(1);
     expect(enemyLevel(2, 5)).toBe(4);
+  });
+});
+
+describe('the material ladder (GDD §9)', () => {
+  /**
+   * The forge pinned every craft to tier 1, so a Core, Heart or Sigil could be
+   * earned and upgraded to but never spent — and `upgrade` exists only to make
+   * them. The whole top of §9's ladder was decorative.
+   */
+  it('spends a material at every tier of the ladder (GDD §9)', () => {
+    const upgraded = performForgeAction(
+      { ...startRun(3), materials: { 1: UPGRADE_COST, 2: 0, 3: 0, 4: 0 } },
+      { kind: 'upgrade', card: null, frame: null, tier: 1 },
+    );
+    expect(upgraded?.materials).toEqual({ 1: 0, 2: 1, 3: 0, 4: 0 });
+    if (upgraded === null) return;
+
+    // The tier the player chose is the tier that gets crafted.
+    const crafted = performForgeAction(upgraded, {
+      kind: 'craft',
+      card: null,
+      frame: 'WARD',
+      tier: 2,
+    });
+    expect(crafted).not.toBeNull();
+
+    const gemId = crafted?.pouch[0];
+    expect(gemId).toBeDefined();
+    if (gemId === undefined) return;
+    expect(crafted?.build.gems[gemId]?.tier).toBe(2);
+    expect(crafted?.materials).toEqual({ 1: 0, 2: 0, 3: 0, 4: 0 });
+  });
+
+  it('refuses a tier the player holds no material for', () => {
+    const run = { ...startRun(3), materials: { 1: 5, 2: 0, 3: 0, 4: 0 } };
+    expect(
+      performForgeAction(run, { kind: 'craft', card: null, frame: 'WARD', tier: 3 }),
+    ).toBeNull();
   });
 });
