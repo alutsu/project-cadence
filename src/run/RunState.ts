@@ -14,7 +14,14 @@ import type { CombatSetup } from '../sim/combat.ts';
 import type { CombatEvent } from '../sim/events.ts';
 import { type BuildState, type Frame, type GemTier } from '../sim/gem.ts';
 import type { CardId, GemId } from '../sim/ids.ts';
-import { createRng, restoreRng, type Rng, type RngState, type RngStreamName } from '../sim/rng.ts';
+import {
+  createRng,
+  restoreRng,
+  RNG_STREAM_NAMES,
+  type Rng,
+  type RngState,
+  type RngStreamName,
+} from '../sim/rng.ts';
 import { DEFAULT_RULES, ULTIMATE_KILL_INSIGHT, type CombatRules } from '../sim/rules.ts';
 import {
   attributeDamage,
@@ -28,12 +35,15 @@ import type { CombatOutcome } from '../sim/state.ts';
 import type { WeaveSnapshot } from '../sim/weave.ts';
 import { rollAttunement, shiftAttunement, type AttunementTable } from './attunement.ts';
 import {
+  depthMapAt,
   generateMap,
+  nodeIn,
   STARTING_POSITION,
   type MapNode,
   type RunMap,
   type RunPosition,
 } from './map.ts';
+import { rollReward, type RewardKind } from './economy.ts';
 import {
   grantMaterial,
   NO_MATERIALS,
@@ -95,7 +105,10 @@ export interface RunState {
   readonly deck: readonly CardId[];
   /** GDD §9's ladder, by tier. Rarity is what sets a gem's Tier (§6.2). */
   readonly materials: Materials;
+  readonly gold: number;
   readonly insight: number;
+  /** Cards removed this run, which is what sets the next removal's price (§9). */
+  readonly removals: number;
   /** Gems crafted but not yet seated. Socketing is permanent (§6.2). */
   readonly pouch: readonly GemId[];
   /** Distinguishes one crafted gem from the next, and survives a save. */
@@ -105,13 +118,14 @@ export interface RunState {
   readonly streams: Readonly<Record<RngStreamName, RngState>>;
 }
 
-const STREAM_NAMES: readonly RngStreamName[] = ['map', 'gemRoll', 'enemyGen', 'combat', 'weave'];
+const STREAM_NAMES: readonly RngStreamName[] = RNG_STREAM_NAMES;
 
 function freshStreams(seed: number): Readonly<Record<RngStreamName, RngState>> {
   const streams: Partial<Record<RngStreamName, RngState>> = {};
   for (const name of STREAM_NAMES) streams[name] = createRng(seed, name).state();
   return {
     map: streams.map ?? createRng(seed, 'map').state(),
+    reward: streams.reward ?? createRng(seed, 'reward').state(),
     gemRoll: streams.gemRoll ?? createRng(seed, 'gemRoll').state(),
     enemyGen: streams.enemyGen ?? createRng(seed, 'enemyGen').state(),
     combat: streams.combat ?? createRng(seed, 'combat').state(),
@@ -155,7 +169,9 @@ export function startRun(seed: number): RunState {
     build: OPENING_BUILD,
     deck: deckAtLevel(SKILLS, STARTING_LEVEL),
     materials: NO_MATERIALS,
+    gold: 0,
     insight: 0,
+    removals: 0,
     pouch: [],
     crafted: 0,
     rules: DEFAULT_RULES,
@@ -268,6 +284,30 @@ export interface EncounterResult {
   readonly events: readonly CombatEvent[];
   /** What the encounter was worth before §5.2's level scaling. */
   readonly baseXp: number;
+}
+
+/**
+ * The node the run is standing in, if any.
+ *
+ * Lives here rather than in `runFlow` because the reward table needs it and
+ * `runFlow` imports this module, not the other way round.
+ */
+export function nodeStandingOn(run: RunState): MapNode | null {
+  const id = run.position.node;
+  return id === null ? null : nodeIn(depthMapAt(run.map, run.position.depth), id);
+}
+
+/**
+ * Which row of §9's sources table a cleared fight is paid from.
+ *
+ * A Dungeon flagged elite pays the elite row even though it is the same node
+ * kind — §12 makes an elite a property of the encounter, not a place.
+ */
+export function rewardKindOf(run: RunState): RewardKind {
+  const node = nodeStandingOn(run);
+  if (node === null) return 'normal';
+  if (node.kind === 'boss') return 'boss';
+  return node.elite ? 'elite' : 'normal';
 }
 
 function depthBase(run: RunState): number {
@@ -385,8 +425,14 @@ export function absorbEncounter(run: RunState, result: EncounterResult): RunStat
     enemyLevel: enemyLevel(depthBase(run), run.threat),
   });
 
+  // GDD §9's sources table, replacing M1's D19 stand-in — that granted a
+  // material on every clear and Insight on a fixed cadence, because there was
+  // no notion of an elite or a boss to pay differently. There is now.
+  const rolled = draw(grown, 'reward', (rng) => rollReward(rewardKindOf(run), rng));
+
   const banked: RunState = {
     ...grown,
+    streams: rolled.streams,
     // GDD §4.10: the wound carries. The chain boundary is M0's stand-in for a
     // Sanctum, and restoring to Max HP is what makes the socket cost bite —
     // it lowers the ceiling you are restored to, permanently.
@@ -394,10 +440,12 @@ export function absorbEncounter(run: RunState, result: EncounterResult): RunStat
     // until the player spends a node on healing it (GDD §4.10 [AMD]).
     hp: Math.min(result.hp, grown.maxHp),
     saturation: recordEncounter(run.saturation, dominant),
-    materials: grantMaterial(run.materials, CLEAR_MATERIAL_TIER),
-    // Every other node, counting from the first — `threat % 2` would pay out
-    // on the opening fight, before the run has done anything to earn it.
-    insight: run.insight + ((run.threat + 1) % INSIGHT_EVERY === 0 ? 1 : 0) + paid,
+    gold: grown.gold + rolled.value.gold,
+    materials:
+      rolled.value.material === null
+        ? grown.materials
+        : grantMaterial(grown.materials, rolled.value.material),
+    insight: grown.insight + rolled.value.insight + paid,
   };
 
   return banked;

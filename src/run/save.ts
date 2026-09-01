@@ -13,9 +13,8 @@ import {
 import { isRegisteredEffect } from '../sim/gemEffects.ts';
 import type { Materials } from './materials.ts';
 import { cardId, gemId, nodeId } from '../sim/ids.ts';
-import { createRng } from '../sim/rng.ts';
 import { digestOf, generateMap, type RunPosition } from './map.ts';
-import type { RngState, RngStreamName } from '../sim/rng.ts';
+import { createRng, RNG_STREAM_NAMES, type RngState, type RngStreamName } from '../sim/rng.ts';
 import { ULTIMATE_RULES, type CombatRules } from '../sim/rules.ts';
 import { isTag, TAGS, type Tag } from '../sim/tag.ts';
 import { tick } from '../sim/tick.ts';
@@ -41,7 +40,7 @@ import type { Attunement } from '../sim/weave.ts';
  * before it and replays it.
  */
 
-export const CURRENT_SAVE_VERSION = 1;
+export const CURRENT_SAVE_VERSION = 2;
 
 /**
  * No optional properties anywhere below, only nulls.
@@ -63,6 +62,7 @@ export interface SaveV1 {
   readonly maxHp: number;
   readonly baselineMaxHp: number;
   readonly gold: number;
+  readonly removals: number;
   readonly insight: number;
   readonly crafted: number;
   readonly materials: Readonly<Record<string, number>>;
@@ -123,7 +123,8 @@ export function toSnapshot(run: RunState): SaveV1 {
     hp: run.hp,
     maxHp: run.maxHp,
     baselineMaxHp: run.baselineMaxHp,
-    gold: 0,
+    gold: run.gold,
+    removals: run.removals,
     insight: run.insight,
     crafted: run.crafted,
     materials: { ...run.materials },
@@ -235,7 +236,7 @@ function readGem(value: unknown, at: number): Gem | string {
   };
 }
 
-const STREAM_NAMES: readonly RngStreamName[] = ['map', 'gemRoll', 'enemyGen', 'combat', 'weave'];
+const STREAM_NAMES: readonly RngStreamName[] = RNG_STREAM_NAMES;
 
 function readStreams(value: unknown): Readonly<Record<RngStreamName, RngState>> | string {
   if (!isRecord(value)) return '"streams" is not an object';
@@ -264,6 +265,7 @@ function readStreams(value: unknown): Readonly<Record<RngStreamName, RngState>> 
     enemyGen: streams.enemyGen ?? never('enemyGen'),
     combat: streams.combat ?? never('combat'),
     weave: streams.weave ?? never('weave'),
+    reward: streams.reward ?? never('reward'),
   };
 }
 
@@ -338,6 +340,8 @@ export function fromSnapshot(raw: unknown): ParseResult<RunState> {
     'hp',
     'maxHp',
     'baselineMaxHp',
+    'gold',
+    'removals',
     'insight',
     'crafted',
   ];
@@ -405,6 +409,8 @@ export function fromSnapshot(raw: unknown): ParseResult<RunState> {
       build,
       deck: deck.map(cardId),
       materials,
+      gold: Number(raw.gold),
+      removals: Number(raw.removals),
       insight: Number(raw.insight),
       pouch: pouch.map(gemId),
       crafted: Number(raw.crafted),
@@ -521,7 +527,32 @@ function readBuild(raw: Record<string, unknown>): BuildState | string {
  */
 export type Migration = (raw: Record<string, unknown>) => Record<string, unknown>;
 
-export const MIGRATIONS: Readonly<Record<number, Migration>> = {};
+export const MIGRATIONS: Readonly<Record<number, Migration>> = {
+  /**
+   * 1 → 2: §9's ledger arrived (gold, the removal ladder, the `reward` stream).
+   *
+   * A v1 save was written before any of the three existed, so there is nothing
+   * to convert — the fields are added at their run-start values. That is honest
+   * rather than lossy: a v1 run genuinely had no gold, because nothing in that
+   * build ever awarded any. The `reward` stream starts at position 0 for the
+   * same reason, so a resumed v1 run rolls its first reward as a fresh run
+   * would, and cannot draw from a position it never reached.
+   */
+  1: (raw) => ({
+    ...raw,
+    gold: 0,
+    removals: 0,
+    streams: {
+      ...(isRecord(raw.streams) ? raw.streams : {}),
+      reward: createRng(readSeed(raw.seed), 'reward').state(),
+    },
+  }),
+};
+
+/** A migration needs the seed to rebuild a stream, and cannot trust the field. */
+function readSeed(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+}
 
 export function migrate(envelope: unknown): ParseResult<Record<string, unknown>> {
   if (!isRecord(envelope)) return { ok: false, errors: ['the save is not an object'] };

@@ -29,7 +29,7 @@ describe('a node card states what it pays (GDD §11)', () => {
   it('names a different currency for each kind', () => {
     expect(nodeLines({ node: firstOf('dungeon'), level: 2 })[0]).toBe('pays XP');
     expect(nodeLines({ node: firstOf('sanctum'), level: 0 })[0]).toBe('pays HP');
-    expect(nodeLines({ node: firstOf('market'), level: 0 })[0]).toBe('pays gold');
+    expect(nodeLines({ node: firstOf('market'), level: 0 })[0]).toBe('spend gold');
   });
 
   it('shows a Dungeon’s Threat rating and its Omen, and nothing of what is inside', () => {

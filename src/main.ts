@@ -4,6 +4,7 @@ import { CombatScene } from './scenes/CombatScene.ts';
 import { MapScene } from './scenes/MapScene.ts';
 import { RunScene } from './scenes/RunScene.ts';
 import { SanctumScene } from './scenes/SanctumScene.ts';
+import { MarketScene } from './scenes/MarketScene.ts';
 import { SummaryScene } from './scenes/SummaryScene.ts';
 import { LAYOUT } from './ui/theme.ts';
 
@@ -40,6 +41,7 @@ new Phaser.Game({
     MapScene,
     CombatScene,
     SanctumScene,
+    MarketScene,
     SummaryScene,
   ],
 });

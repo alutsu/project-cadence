@@ -125,7 +125,9 @@ function summaryLines(run: RunState): readonly string[] {
     `  seed ${String(run.seed)}`,
     `  level ${String(run.level)} · ${String(run.deck.length)} cards · threat ${String(run.threat)}`,
     `  ${String(run.hp)}/${String(run.maxHp)} HP · Max HP floor ${String(maxHpFloor(run))}`,
-    `  insight ${String(run.insight)}`,
+    // §13's summary is the run's ledger, so it reports what §9 tracks. Gold was
+    // missing because until now nothing in the game had any.
+    `  ${String(run.gold)} gold · insight ${String(run.insight)} · ${String(run.removals)} cards removed`,
     '',
     '  BUILD',
     ...(build.length === 0 ? ['    nothing socketed'] : build),

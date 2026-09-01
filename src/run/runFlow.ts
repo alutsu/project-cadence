@@ -15,10 +15,12 @@ import {
   absorbEncounter,
   encounterSetupFor,
   NORMAL_BASE_XP,
+  rewardKindOf,
   shiftForDepth,
   startRun,
   type RunState,
 } from './RunState.ts';
+import { rewardRuleFor } from './economy.ts';
 
 /**
  * The run, as a reducer (GDD §20.3's argument, applied one layer up).
@@ -49,6 +51,12 @@ export type RunIntent =
   | { readonly kind: 'leaveNode' }
   /** GDD §13: "Retry this seed." Free, and no reward penalty. */
   | { readonly kind: 'retrySeed' }
+  /**
+   * A Market act already performed (GDD §9). `market.ts` owns the prices and
+   * returns a whole new run, the way `performForgeAction` does — the flow's job
+   * is to carry it, not to re-derive what it cost.
+   */
+  | { readonly kind: 'trade'; readonly run: RunState }
   /**
    * The feel pass's knobs (GDD §22). Rules live in run state, so moving one is
    * a run-level act like any other — and §22 Q1 and Q6 are still open, which is
@@ -143,6 +151,9 @@ export function advanceRun(run: RunState, intent: RunIntent): RunStep {
       // Socketing is permanent and crafting spends materials (§6.2), so this
       // is a save point even though the run has not moved.
       return { run: intent.run, savePoint: true };
+    case 'trade':
+      // Gold is spent and a removal is forever (§9), so the same holds.
+      return { run: intent.run, savePoint: true };
   }
 }
 
@@ -174,7 +185,10 @@ function finishEncounter(run: RunState, result: EncounterOutcome): RunStep {
     outcome: 'won',
     hp: result.hp,
     events: result.events,
-    baseXp: NORMAL_BASE_XP,
+    // §9's XP column: base for a normal fight, ×2.5 for an elite, ×4 for a
+    // boss. This was `NORMAL_BASE_XP` for every fight, so a boss paid the same
+    // XP as the rat that opened the run.
+    baseXp: Math.round(NORMAL_BASE_XP * rewardRuleFor(rewardKindOf(run)).xpFactor),
   });
   const next = run.position.indexInNode + 1;
 

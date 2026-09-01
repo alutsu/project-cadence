@@ -419,7 +419,7 @@ v0.1 spent gold in three places and never said where gold came from. Full ledger
 
 | Sink | Cost |
 |---|---|
-| Card removal | 60 → 120 → 240 → 480 gold |
+| Card removal (Market) | 60 → 120 → 240 → 480 gold |
 | Relic (Market) | 90–160 gold |
 | Materials (Market) | 40 (T1) / 90 (T2) / 200 (T3) |
 | Socket attempt | Max HP (+1 Insight for 3rd) |
@@ -429,6 +429,23 @@ v0.1 spent gold in three places and never said where gold came from. Full ledger
 **Materials taxonomy:** Shard (T1) → Core (T2) → Heart (T3) → Sigil (T4). Three of a tier upgrade into one of the next. This gives low-tier drops a permanent floor of value and prevents dead loot late in a run.
 
 **Expected run totals** (for balance sim targets): ~450 gold, ~9 materials, ~7 Insight, 5–7 sockets opened, 4–6 gems crafted.
+
+**[AMD] Where removal happens, and how far it goes.** The sinks table above
+annotated two rows "(Market)" and left card removal unplaced, which left the
+only gold-spending node ambiguous. Removal is a **Market** act — it is the third
+thing gold buys, and there is nowhere else to spend it. Two bounds follow from
+the ladder having exactly four rungs and no fifth:
+
+- **The ladder is the cap.** Four removals cost 900 gold against an expected run
+  total of ~450, so the wallet runs out well before the rungs do. A fifth
+  removal is refused rather than priced by extrapolation.
+- **The deck floor is 4.** §5.1 starts the player on four starters plus a
+  signature, and below four cards the hand cap of six and the Cooldown pile stop
+  meaning anything — every turn collapses into Guard (§4.9). The **signature is
+  never removable**: §6.1 opens its socket at run start, so removing it would
+  delete the build layer's own on-ramp.
+- Anything socketed into a removed card goes with it, which is already §6.2's
+  rule for taking a gem out of a socket rather than a new one. §15.2 confirms it.
 
 **Nothing carries between runs.** Insight, gold, and materials are all zeroed on run end.
 

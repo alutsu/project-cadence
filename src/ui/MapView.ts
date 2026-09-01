@@ -59,7 +59,7 @@ export function nodeLines(offered: OfferedNode): readonly string[] {
   const { node, level } = offered;
 
   if (node.kind === 'sanctum') return ['pays HP', 'rest to full', 'costs you the node'];
-  if (node.kind === 'market') return ['pays gold', 'closed until', 'the ledger lands'];
+  if (node.kind === 'market') return ['spend gold', 'materials, or', 'thin the deck'];
   if (node.kind === 'boss') {
     return ['pays the Depth', `enemy level ${String(level)}`, 'the way onward'];
   }

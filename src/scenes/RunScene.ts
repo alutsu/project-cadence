@@ -24,7 +24,7 @@ const SCENES: Readonly<Record<RunView['kind'], string>> = {
   map: 'Map',
   encounter: 'Combat',
   sanctum: 'Sanctum',
-  market: 'Map',
+  market: 'Market',
   summary: 'Summary',
 };
 
@@ -86,14 +86,6 @@ export class RunScene extends Phaser.Scene {
 
   private show(): void {
     const view = viewOf(this.run);
-
-    if (view.kind === 'market') {
-      // [M2 STAND-IN] §9's ledger is S5's. Until it exists a Market pays
-      // nothing, so taking one is a wasted node — which is honest, and better
-      // than a screen that pretends to sell something.
-      this.dispatch({ kind: 'leaveNode' });
-      return;
-    }
 
     this.record(view);
 

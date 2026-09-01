@@ -6,7 +6,28 @@
  * Counter-based rather than state-chaining so restoring a saved position is O(1)
  * (GDD §16: stream positions are part of the save).
  */
-export type RngStreamName = 'map' | 'gemRoll' | 'enemyGen' | 'combat' | 'weave';
+export type RngStreamName = (typeof RNG_STREAM_NAMES)[number];
+
+/**
+ * Every stream, once.
+ *
+ * The union and the list used to be written out separately in three places, and
+ * adding `reward` proved why that is a hazard: two of the three were updated and
+ * the save layer then rejected the stream it had just been handed. Deriving the
+ * union from the list makes a half-added stream a compile error rather than a
+ * runtime refusal.
+ *
+ * Order is part of the contract — `freshStreams` walks it — so append, never
+ * insert.
+ */
+export const RNG_STREAM_NAMES = [
+  'map',
+  'gemRoll',
+  'enemyGen',
+  'combat',
+  'weave',
+  'reward',
+] as const;
 
 export interface RngState {
   readonly stream: RngStreamName;
