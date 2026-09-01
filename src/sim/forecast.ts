@@ -151,7 +151,8 @@ function projectedStrikeDamage(state: CombatState, strike: PendingStrike): numbe
     strike.resolved.targeting === 'all' ? livingEnemies(state)[0] : findActor(state, strike.target);
 
   if (attacker === undefined || defender === undefined) return 0;
-  return resolveHit({ resolved: strike.resolved, attacker, defender }, state.weave).amount;
+  return resolveHit({ resolved: strike.resolved, attacker, defender }, state.weave, state.levers)
+    .amount;
 }
 
 export interface PreviewHit {

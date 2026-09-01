@@ -75,13 +75,16 @@ export function recordEncounter(
  * it is not — the decay is why a build that diversifies recovers rather than
  * being punished forever for what it used to be.
  */
-export function saturationOf(history: SaturationHistory): Readonly<Record<Tag, number>> {
+export function saturationOf(
+  history: SaturationHistory,
+  cap = SATURATION_CAP,
+): Readonly<Record<Tag, number>> {
   const levels: Record<Tag, number> = { ...tagTable(0) };
 
   for (const dominant of history.recent) {
     for (const tag of TAGS) {
       const moved = levels[tag] + (tag === dominant ? SATURATION_GAIN : -SATURATION_DECAY);
-      levels[tag] = Math.min(SATURATION_CAP, Math.max(0, moved));
+      levels[tag] = Math.min(cap, Math.max(0, moved));
     }
   }
 

@@ -7,6 +7,7 @@ import type { CombatRules } from './rules.ts';
 import type { ActorId, CardId } from './ids.ts';
 import type { Tick } from './tick.ts';
 import type { WeaveSnapshot } from './weave.ts';
+import type { RelicLevers } from './relicEffects.ts';
 
 export type CombatOutcome = 'ongoing' | 'won' | 'lost';
 
@@ -59,6 +60,13 @@ export interface CombatState {
    * differently, and the ghost preview clones the state, not the module.
    */
   readonly weave: WeaveSnapshot;
+  /**
+   * GDD §10's relics, folded to their levers — carried here for the same reason
+   * `rules` and `weave` are, and the same stronger one: `previewAction` clones
+   * the state, so a relic living outside it would be a relic the ghost queue
+   * could not see, and the preview would stop being the commit.
+   */
+  readonly levers: RelicLevers;
   /**
    * What is socketed where (GDD §6.1, §6.2), carried in the state for the same
    * reason `rules` and `weave` are — and for one stronger one. `previewAction`

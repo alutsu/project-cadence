@@ -468,6 +468,25 @@ Passive permanent modifiers, 1 per elite kill (choice of 2) plus Market purchase
 
 Every relic should carry a real drawback. Pure upgrades create a known-correct relic ranking, which is exactly the meta this design exists to avoid.
 
+**[AMD] Two of the examples above stated no drawback**, and the closing rule
+above says every relic must carry one — so the table contradicted itself.
+Metronome and Second Wind are now:
+
+- *Metronome* — your first action each encounter costs 0 Weight, **and every
+  action after it costs 1 more**.
+- *Second Wind* — the Guard action draws 2 instead of 1, **and puts up 1 less
+  Guard**.
+
+Both drawbacks are authored here rather than chosen by the implementation: the
+rule that every relic costs something is a design rule, and a relic shipped
+without one would have been the known-correct pick the paragraph above forbids.
+
+**[AMD] Holding two relics that write the same value takes the worse of the
+two**, not whichever was acquired later. Prism caps Ascendant at ×1.15 and
+Zealot's Blinders raises it to ×1.7; a player holding both gets ×1.15. Acquisition
+order is not a game rule, and the alternative is a relic whose drawback can be
+cancelled by shopping.
+
 ---
 
 ## 11. Map and run structure

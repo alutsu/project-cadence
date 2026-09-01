@@ -24,6 +24,16 @@ export const SOCKET_ODDS: readonly number[] = [1, 0.75, 0.45];
 export const SOCKET_INSIGHT: readonly number[] = [0, 0, 1];
 export const MAX_SOCKETS = SOCKET_COSTS.length;
 
+/**
+ * However much §10's relics discount a socket, it costs at least this share.
+ *
+ * The GDD does not state a floor — Bone Ledger is the only relic that discounts
+ * and 4% off 8% still leaves something — but the rule belongs here rather than
+ * in the one relic that happens not to breach it, because P1 makes the Max HP
+ * cost the whole reason a socket is a decision (§6.1).
+ */
+export const MIN_SOCKET_SHARE = 0.02;
+
 /** GDD §6.1: a scarred card costs half again, and never more than that. */
 export const SCAR_SURCHARGE = 0.5;
 
@@ -41,6 +51,12 @@ export interface SocketQuery {
   /** GDD §6.1's floor: 40% of the level baseline, as an absolute number. */
   readonly floor: number;
   readonly insight: number;
+  /**
+   * GDD §10 Bone Ledger: percentage points off the Max HP share. Optional
+   * because most callers hold no relics, and defaulting it beats making every
+   * one of them pass a zero.
+   */
+  readonly costDelta?: number;
 }
 
 /** What the next socket on this card would cost, right now (GDD §6.1). */
@@ -52,10 +68,14 @@ export function socketPrice(query: SocketQuery): SocketPrice | null {
   if (share === undefined || chance === undefined || insight === undefined) return null;
 
   const surcharge = query.sockets.scarred ? 1 + SCAR_SURCHARGE : 1;
+  // A relic may discount the share but never to nothing: §6.1's cost is the one
+  // thing paying for the build, and a free socket stops it being a decision.
+  const discounted = Math.max(MIN_SOCKET_SHARE, share + (query.costDelta ?? 0));
+
   return {
     // Rounded up: a cheap socket on a small pool must still cost something, or
     // the percentage quietly becomes free at the bottom of the range.
-    maxHp: Math.ceil(query.maxHp * share * surcharge),
+    maxHp: Math.ceil(query.maxHp * discounted * surcharge),
     insight,
     chance,
     scarred: query.sockets.scarred,

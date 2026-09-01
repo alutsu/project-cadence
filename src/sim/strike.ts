@@ -17,6 +17,7 @@ import {
 import { damageScale } from './status.ts';
 import type { Tag } from './tag.ts';
 import { weaveVerdict, type TagVerdict, type WeaveSnapshot } from './weave.ts';
+import { NO_LEVERS, type RelicLevers } from './relicEffects.ts';
 
 /**
  * The one damage path (docs/M1_PLAN.md D27).
@@ -63,14 +64,25 @@ export interface HitOrder {
  * because that is the figure the card face prints, and everything else lands
  * here. A third would let the hover and the commit disagree by a point.
  */
-export function resolveHit(order: HitOrder, weave: WeaveSnapshot): ResolvedHit {
+export function resolveHit(
+  order: HitOrder,
+  weave: WeaveSnapshot,
+  levers: RelicLevers = NO_LEVERS,
+): ResolvedHit {
   const { resolved, attacker, defender } = order;
   const verdict = weaveVerdict({
     tag: resolved.tag,
     weave,
     resistances: defender.resistances,
   });
-  const scaled = resolved.basePerTarget * verdict.multiplier * damageScale(attacker.statuses);
+  // GDD §10 Glass Sigil: *"+30% damage dealt and taken"*. Applied here, which is
+  // the one place both the card face and the real strike read — the UI shows
+  // post-relic damage without computing it (P3, CLAUDE.md §2.1).
+  const scaled =
+    resolved.basePerTarget *
+    verdict.multiplier *
+    damageScale(attacker.statuses) *
+    levers.damageDealtMult;
   const amount = Math.round(scaled);
 
   return {
@@ -83,8 +95,16 @@ export function resolveHit(order: HitOrder, weave: WeaveSnapshot): ResolvedHit {
 }
 
 /** An enemy's telegraphed blow. No card, no tag, no Weave — just Empower. */
-export function resolveIntent(attacker: Actor, intent: Intent): ResolvedHit {
-  const amount = Math.round(intent.damage * damageScale(attacker.statuses));
+export function resolveIntent(
+  attacker: Actor,
+  intent: Intent,
+  levers: RelicLevers = NO_LEVERS,
+): ResolvedHit {
+  // The other half of Glass Sigil. An enemy's blow carries no tag and no Weave
+  // (§4.5), so `damageTakenMult` is the only relic term it has.
+  const amount = Math.round(
+    intent.damage * damageScale(attacker.statuses) * levers.damageTakenMult,
+  );
   // The player has no Poise (GDD §4.6), so an intent has nothing to shake.
   return { amount, poiseAmount: amount, staggerBonus: 0, tag: null, verdict: null };
 }
@@ -157,10 +177,10 @@ export function damageAgainst(
   card: CardDefinition,
   target: ActorId | null,
 ): number {
-  const resolved = resolveCard(state.weave, card);
+  const resolved = resolveCard({ weave: state.weave, card, levers: state.levers });
   const attacker = playerActor(state);
   const defender = target === null ? livingEnemies(state)[0] : findActor(state, target);
 
   if (attacker === undefined || defender === undefined) return resolved.basePerTarget;
-  return resolveHit({ resolved, attacker, defender }, state.weave).amount;
+  return resolveHit({ resolved, attacker, defender }, state.weave, state.levers).amount;
 }

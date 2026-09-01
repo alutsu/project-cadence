@@ -11,6 +11,7 @@ import {
   type GemEffect,
 } from '../sim/gem.ts';
 import { isRegisteredEffect } from '../sim/gemEffects.ts';
+import { relicIds } from '../data/relics.ts';
 import type { Materials } from './materials.ts';
 import { cardId, gemId, nodeId } from '../sim/ids.ts';
 import { digestOf, generateMap, type RunPosition } from './map.ts';
@@ -40,7 +41,7 @@ import type { Attunement } from '../sim/weave.ts';
  * before it and replays it.
  */
 
-export const CURRENT_SAVE_VERSION = 2;
+export const CURRENT_SAVE_VERSION = 3;
 
 /**
  * No optional properties anywhere below, only nulls.
@@ -62,6 +63,7 @@ export interface SaveV1 {
   readonly maxHp: number;
   readonly baselineMaxHp: number;
   readonly gold: number;
+  readonly relics: readonly string[];
   readonly removals: number;
   readonly insight: number;
   readonly crafted: number;
@@ -124,6 +126,7 @@ export function toSnapshot(run: RunState): SaveV1 {
     maxHp: run.maxHp,
     baselineMaxHp: run.baselineMaxHp,
     gold: run.gold,
+    relics: [...run.relics],
     removals: run.removals,
     insight: run.insight,
     crafted: run.crafted,
@@ -281,7 +284,14 @@ function readRules(value: unknown): CombatRules | string {
   const ultimate = ULTIMATE_RULES.find((rule) => rule === named);
   if (ultimate === undefined) return '"rules.ultimate" names an unknown rule';
 
-  const numbers = ['guardCap', 'guardDecayEvery', 'guardWeight', 'guardGain', 'firstStagger'];
+  const numbers = [
+    'guardCap',
+    'guardDecayEvery',
+    'guardWeight',
+    'guardGain',
+    'firstStagger',
+    'guardDraw',
+  ];
   for (const field of numbers) {
     const read = readNumber(value[field], `rules.${field}`);
     if (typeof read === 'string') return read;
@@ -291,6 +301,7 @@ function readRules(value: unknown): CombatRules | string {
     ultimate,
     guardCap: Number(value.guardCap),
     guardDecayEvery: Number(value.guardDecayEvery),
+    guardDraw: Number(value.guardDraw),
     guardWeight: tick(Number(value.guardWeight)),
     guardGain: Number(value.guardGain),
     firstStagger: Number(value.firstStagger),
@@ -392,6 +403,9 @@ export function fromSnapshot(raw: unknown): ParseResult<RunState> {
   const recent = readSaturation(raw.saturation);
   if (typeof recent === 'string') return { ok: false, errors: [recent] };
 
+  const relics = readRelics(raw.relics);
+  if (typeof relics === 'string') return { ok: false, errors: [relics] };
+
   return {
     ok: true,
     value: {
@@ -410,6 +424,7 @@ export function fromSnapshot(raw: unknown): ParseResult<RunState> {
       deck: deck.map(cardId),
       materials,
       gold: Number(raw.gold),
+      relics,
       removals: Number(raw.removals),
       insight: Number(raw.insight),
       pouch: pouch.map(gemId),
@@ -538,6 +553,17 @@ export const MIGRATIONS: Readonly<Record<number, Migration>> = {
    * same reason, so a resumed v1 run rolls its first reward as a fresh run
    * would, and cannot draw from a position it never reached.
    */
+  /**
+   * 2 → 3: §10's relics arrived. A v2 run held none, because nothing in that
+   * build could grant one, so the field is added empty rather than guessed at.
+   */
+  2: (raw) => ({
+    ...raw,
+    relics: [],
+    // §4.3's "draw 1" was a literal until §10's Second Wind; a v2 save recorded
+    // rules without it, and 1 is what that build did.
+    rules: { ...(isRecord(raw.rules) ? raw.rules : {}), guardDraw: 1 },
+  }),
   1: (raw) => ({
     ...raw,
     gold: 0,
@@ -548,6 +574,28 @@ export const MIGRATIONS: Readonly<Record<number, Migration>> = {
     },
   }),
 };
+
+/**
+ * §10's relics, by id. A save naming a relic this build no longer has is refused
+ * rather than dropped: the levers it was carrying changed how the run played,
+ * and resuming without them is a different run wearing the same seed.
+ */
+function isKnownRelic(id: string): boolean {
+  return relicIds().includes(id);
+}
+
+function readRelics(value: unknown): readonly string[] | string {
+  if (!isUnknownArray(value)) return '"relics" is not a list';
+
+  const held: string[] = [];
+  for (const entry of value) {
+    if (typeof entry !== 'string') return '"relics" holds something that is not an id';
+    if (!isKnownRelic(entry)) return `"relics" names "${entry}", which this build does not have`;
+    held.push(entry);
+  }
+
+  return held;
+}
 
 /** A migration needs the seed to rebuild a stream, and cannot trust the field. */
 function readSeed(value: unknown): number {

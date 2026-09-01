@@ -109,7 +109,7 @@ describe('a gem changes the card it is seated in (GDD §6.2)', () => {
       effects: [{ type: 'RECOVERY_DELTA', value: -3, tag: null }],
     });
     const state = opened({ deck: [LUNGE], actors: soloRat(), build: build(LUNGE, hasted) });
-    const resolved = resolveCard(state.weave, card(LUNGE), state.build);
+    const resolved = resolveCard({ weave: state.weave, card: card(LUNGE), build: state.build });
 
     // Lunge is a Light card: Weight 4, Recovery 8 (GDD §4.1).
     expect(resolved.weight).toBe(2);
@@ -123,14 +123,18 @@ describe('a gem changes the card it is seated in (GDD §6.2)', () => {
     const heavy = gem('g_free', { frame: 'HASTE', weightDelta: -99 });
     const state = opened({ deck: [LUNGE], actors: soloRat(), build: build(LUNGE, heavy) });
 
-    expect(resolveCard(state.weave, card(LUNGE), state.build).weight).toBe(1);
+    expect(resolveCard({ weave: state.weave, card: card(LUNGE), build: state.build }).weight).toBe(
+      1,
+    );
   });
 
   it('never lets Recovery go negative', () => {
     const free = gem('g_nocd', { effects: [{ type: 'RECOVERY_DELTA', value: -99, tag: null }] });
     const state = opened({ deck: [LUNGE], actors: soloRat(), build: build(LUNGE, free) });
 
-    expect(resolveCard(state.weave, card(LUNGE), state.build).recovery).toBe(0);
+    expect(
+      resolveCard({ weave: state.weave, card: card(LUNGE), build: state.build }).recovery,
+    ).toBe(0);
   });
 });
 
@@ -157,7 +161,9 @@ describe('REPEAT swings the card again (GDD §6.2)', () => {
     const repeat = gem('g_repeat', { frame: 'REPEAT', weightDelta: 2 });
     const state = opened({ deck: [LUNGE], actors: soloRat(), build: build(LUNGE, repeat) });
 
-    expect(resolveCard(state.weave, card(LUNGE), state.build).weight).toBe(6);
+    expect(resolveCard({ weave: state.weave, card: card(LUNGE), build: state.build }).weight).toBe(
+      6,
+    );
   });
 });
 
@@ -213,7 +219,9 @@ describe('KINDLE converts before the Weave prices it (GDD §6.2)', () => {
 
     expect(damageTo(play(bare, CRUSH), RAT)).toBe(17);
     expect(damageTo(play(armed, CRUSH), RAT)).toBe(24);
-    expect(resolveCard(armed.weave, card(CRUSH), armed.build).tag).toBe('Physical');
+    expect(resolveCard({ weave: armed.weave, card: card(CRUSH), build: armed.build }).tag).toBe(
+      'Physical',
+    );
   });
 });
 
@@ -228,8 +236,16 @@ describe('socket order is meaning, not an accident (docs/M1_PLAN.md D33)', () =>
       effects: [{ type: 'CONVERT_TAG', value: 0, tag: 'Frost' }],
     });
 
-    const first = resolveCard(NEUTRAL_WEAVE, card(LUNGE), build(LUNGE, toFire, toFrost));
-    const second = resolveCard(NEUTRAL_WEAVE, card(LUNGE), build(LUNGE, toFrost, toFire));
+    const first = resolveCard({
+      weave: NEUTRAL_WEAVE,
+      card: card(LUNGE),
+      build: build(LUNGE, toFire, toFrost),
+    });
+    const second = resolveCard({
+      weave: NEUTRAL_WEAVE,
+      card: card(LUNGE),
+      build: build(LUNGE, toFrost, toFire),
+    });
 
     expect(first.tag).toBe('Frost');
     expect(second.tag).toBe('Fire');
@@ -241,10 +257,12 @@ describe('socket order is meaning, not an accident (docs/M1_PLAN.md D33)', () =>
       gem('g_a', { effects: [{ type: 'DAMAGE_MULT', value: 0.5, tag: null }] }),
       gem('g_b', { effects: [{ type: 'DAMAGE_MULT', value: -0.2, tag: null }] }),
     );
-    const once = resolveCard(NEUTRAL_WEAVE, card(LUNGE), loadout);
+    const once = resolveCard({ weave: NEUTRAL_WEAVE, card: card(LUNGE), build: loadout });
 
     for (let repeat = 0; repeat < 100; repeat += 1) {
-      expect(resolveCard(NEUTRAL_WEAVE, card(LUNGE), loadout)).toEqual(once);
+      expect(resolveCard({ weave: NEUTRAL_WEAVE, card: card(LUNGE), build: loadout })).toEqual(
+        once,
+      );
     }
   });
 });

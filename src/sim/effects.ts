@@ -121,7 +121,11 @@ function landStrike(state: CombatState, strike: PendingStrike): CombatStep {
     // card was played, and a damage figure frozen against a different board
     // than the targets it lands on was never a real snapshot — so both follow
     // the same clock (docs/M1_PLAN.md D27).
-    const hit = resolveHit({ resolved: strike.resolved, attacker, defender }, current.weave);
+    const hit = resolveHit(
+      { resolved: strike.resolved, attacker, defender },
+      current.weave,
+      current.levers,
+    );
     const struck = applyDamage(current, { source: strike.source, target, hit });
     current = struck.state;
     events.push(...struck.events);

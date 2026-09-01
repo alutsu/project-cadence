@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { socketPrice, socketsOf, type SocketPrice, type SocketRefusal } from '../run/socket.ts';
-import { maxHpFloor, socketRefusalFor, type RunState } from '../run/RunState.ts';
+import { socketQueryFor, socketRefusalFor, type RunState } from '../run/RunState.ts';
 import { FRAMES, GEM_TIERS, type Frame, type GemTier } from '../sim/gem.ts';
 import { frameTable, rangeAt, type FrameRoll } from '../data/frames.ts';
 import { MATERIAL_NAMES } from '../run/materials.ts';
@@ -198,12 +198,7 @@ function selectionLines(run: RunState, selected: CardId | null, frame: Frame): r
   }
 
   const sockets = socketsOf(run.build.sockets, selected);
-  const price = socketPrice({
-    sockets,
-    maxHp: run.maxHp,
-    floor: maxHpFloor(run),
-    insight: run.insight,
-  });
+  const price = socketPrice(socketQueryFor(run, selected));
   const seated = sockets.gems.map((id) => run.build.gems[id]?.frame ?? '?');
   const held = GEM_TIERS.reduce((total, tier) => total + run.materials[tier], 0);
   const next = run.pouch[0];
@@ -394,11 +389,7 @@ function warningFor(action: ForgeAction, run: RunState): string {
   if (action.kind === 'seat') return 'press again — socketing is PERMANENT';
 
   const card = action.card;
-  const sockets = card === null ? null : socketsOf(run.build.sockets, card);
-  const price =
-    sockets === null
-      ? null
-      : socketPrice({ sockets, maxHp: run.maxHp, floor: maxHpFloor(run), insight: run.insight });
+  const price = card === null ? null : socketPrice(socketQueryFor(run, card));
 
   return price === null
     ? 'press again to confirm'

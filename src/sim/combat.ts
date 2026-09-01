@@ -39,6 +39,7 @@ import {
   type StatusApplication,
 } from './status.ts';
 import { addTicks, TICK_ZERO, tick, type Tick } from './tick.ts';
+import { NO_LEVERS, type RelicLevers } from './relicEffects.ts';
 import { NEUTRAL_WEAVE, NO_RESISTANCE, type ResistanceTable, type WeaveSnapshot } from './weave.ts';
 
 /**
@@ -84,6 +85,8 @@ export interface CombatSetup {
    * unchanged by the Weave arriving.
    */
   readonly weave?: WeaveSnapshot;
+  /** GDD §10's folded levers. Omitted means no relics held — M0's every test. */
+  readonly levers?: RelicLevers;
   /** Sockets and gems. Omitted means an unbuilt deck — M0's every test. */
   readonly build?: BuildState;
 }
@@ -95,6 +98,7 @@ export function startCombat(setup: CombatSetup): CombatStep {
     now: TICK_ZERO,
     rules: setup.rules ?? DEFAULT_RULES,
     weave: setup.weave ?? NEUTRAL_WEAVE,
+    levers: setup.levers ?? NO_LEVERS,
     // Every seated gem starts the encounter at zero: a charge is earned in
     // the fight it is spent in (GDD §6.2).
     build: freshBuild(setup.build ?? EMPTY_BUILD),
@@ -362,6 +366,7 @@ function strikeOnce(state: CombatState, order: StrikeOrder): CombatStep {
     const hit = resolveHit(
       { resolved: order.resolved, attacker: order.attacker, defender },
       current.weave,
+      current.levers,
     );
     const struck = applyDamage(current, { source: order.attacker.id, target, hit });
     current = struck.state;
@@ -526,7 +531,7 @@ function resolveEnemyTurn(state: CombatState, enemy: Actor): CombatStep {
       : applyDamage(bled.state, {
           source: enemy.id,
           target: player.id,
-          hit: resolveIntent(enemy, intent),
+          hit: resolveIntent(enemy, intent, state.levers),
         });
 
   // The intent lands, then the rotation advances — so what the strip showed is
@@ -657,6 +662,29 @@ function openPlayerTurn(state: CombatState, player: Actor): CombatStep {
   return { state: drawn.state, events: [...events, ...drawn.events] };
 }
 
+/**
+ * Draws `count` cards, one at a time, keeping every event each draw emits.
+ *
+ * §4.9's hand cap and the Cooldown pile both live inside `drawOne`, so drawing
+ * two is two draws and not one draw of two — a reshuffle that falls between them
+ * has to happen between them.
+ */
+function drawCards(
+  state: CombatState,
+  count: number,
+): { state: CombatState; events: readonly CombatEvent[] } {
+  let carried = state;
+  const events: CombatEvent[] = [];
+
+  for (let drawn = 0; drawn < count; drawn += 1) {
+    const step = drawOne(carried);
+    carried = step.state;
+    events.push(...step.events);
+  }
+
+  return { state: carried, events };
+}
+
 /** Commits the acting player's choice. Illegal actions are refused here. */
 export function reduce(state: CombatState, action: Action): ReduceResult {
   if (state.outcome !== 'ongoing') return { ok: false, error: { reason: 'combat_over' } };
@@ -686,9 +714,10 @@ function activePlayer(state: CombatState): Actor | null {
 function commitGuard(state: CombatState, actor: Actor): CombatStep {
   const at = state.now;
   const bled = sufferBleed(state, actor);
-  const drawn = drawOne(bled.state);
+  const drawn = drawCards(bled.state, state.rules.guardDraw);
 
-  // GDD §4.3: Weight 3, draw 1, gain 3 Guard.
+  // GDD §4.3: Weight 3, draw 1, gain 3 Guard — each of the three a rule §10's
+  // relics can move, so each read from `rules` rather than written out here.
   const guarded = withActor(
     drawn.state,
     gainGuard(currentActor(drawn.state, actor), state.rules.guardGain, state.rules.guardCap),
@@ -737,7 +766,13 @@ function commitPlay(
   // Resolved once, here, and every consumer below reads the result rather than
   // the printed card: Weight, Recovery and damage all move (GDD §7.1, §6.2) and
   // a second reading of the card is a second answer (docs/M1_PLAN.md D27).
-  const resolved = resolveCard(state.weave, card, state.build);
+  const resolved = resolveCard({
+    weave: state.weave,
+    card,
+    build: state.build,
+    levers: state.levers,
+    committed: actor.actionsCommitted,
+  });
 
   const struck = windup
     ? commitPending(bled.state, { actor, resolved, target })

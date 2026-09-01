@@ -12,7 +12,7 @@ import {
 } from '../sim/level.ts';
 import type { CombatSetup } from '../sim/combat.ts';
 import type { CombatEvent } from '../sim/events.ts';
-import { type BuildState, type Frame, type GemTier } from '../sim/gem.ts';
+import { GEM_TIERS, type BuildState, type Frame, type GemTier } from '../sim/gem.ts';
 import type { CardId, GemId } from '../sim/ids.ts';
 import {
   createRng,
@@ -32,7 +32,13 @@ import {
   type SaturationHistory,
 } from '../sim/saturation.ts';
 import type { CombatOutcome } from '../sim/state.ts';
-import type { WeaveSnapshot } from '../sim/weave.ts';
+import {
+  ATTUNEMENTS,
+  ATTUNEMENT_TABLE,
+  type Attunement,
+  type AttunementProfile,
+  type WeaveSnapshot,
+} from '../sim/weave.ts';
 import { rollAttunement, shiftAttunement, type AttunementTable } from './attunement.ts';
 import {
   depthMapAt,
@@ -44,6 +50,8 @@ import {
   type RunPosition,
 } from './map.ts';
 import { rollReward, type RewardKind } from './economy.ts';
+import { leversFor } from './relics.ts';
+import type { RelicLevers } from '../sim/relicEffects.ts';
 import {
   grantMaterial,
   NO_MATERIALS,
@@ -58,6 +66,7 @@ import {
   seatGem,
   socketRefusal,
   socketsOf,
+  type SocketQuery,
   type SocketRefusal,
 } from './socket.ts';
 
@@ -106,6 +115,8 @@ export interface RunState {
   /** GDD §9's ladder, by tier. Rarity is what sets a gem's Tier (§6.2). */
   readonly materials: Materials;
   readonly gold: number;
+  /** GDD §10: permanent for the run, and nothing carries out of it (§9). */
+  readonly relics: readonly string[];
   readonly insight: number;
   /** Cards removed this run, which is what sets the next removal's price (§9). */
   readonly removals: number;
@@ -170,6 +181,7 @@ export function startRun(seed: number): RunState {
     deck: deckAtLevel(SKILLS, STARTING_LEVEL),
     materials: NO_MATERIALS,
     gold: 0,
+    relics: [],
     insight: 0,
     removals: 0,
     pouch: [],
@@ -191,12 +203,26 @@ export function canOpenAnySocket(run: RunState): boolean {
 
 /** §6.1's own refusal, for one card. The single place the rules are read. */
 export function socketRefusalFor(run: RunState, card: CardId): SocketRefusal | null {
-  return socketRefusal({
+  return socketRefusal(socketQueryFor(run, card));
+}
+
+/**
+ * What §6.1 charges this run for the next socket on this card.
+ *
+ * One function because four call sites were assembling it — two here and two in
+ * the forge — and §10's Bone Ledger discounts it. A view building its own query
+ * would have quoted the undiscounted price while the run charged the discounted
+ * one, which is P3 broken in the most direct way available: the number on screen
+ * would not be the number paid.
+ */
+export function socketQueryFor(run: RunState, card: CardId): SocketQuery {
+  return {
     sockets: socketsOf(run.build.sockets, card),
     maxHp: run.maxHp,
     floor: maxHpFloor(run),
     insight: run.insight,
-  });
+    costDelta: leversFor(run.relics).socketCostDelta,
+  };
 }
 
 /** GDD §6.1's floor, in absolute terms. */
@@ -206,7 +232,55 @@ export function maxHpFloor(run: RunState): number {
 
 /** Where the tags stand right now (GDD §7): the run's memory, made a number. */
 export function weaveSnapshot(run: RunState): WeaveSnapshot {
-  return { attunement: run.attunement, saturation: saturationOf(run.saturation) };
+  const levers = leversFor(run.relics);
+
+  return {
+    attunement: run.attunement,
+    saturation: saturationOf(run.saturation, levers.saturationCap ?? undefined),
+    profiles: relicProfiles(levers),
+  };
+}
+
+/**
+ * GDD §7.1's table with §10's Weave relics applied.
+ *
+ * Only the multiplier moves. The ±1 Weight rider stays exactly as §7.1 authored
+ * it, because no relic in §10 touches it — and inventing that a Weave relic also
+ * changes Weight would be resolving a design question by writing code, which
+ * CLAUDE.md §1.1 forbids.
+ */
+function relicProfiles(levers: RelicLevers): Readonly<Record<Attunement, AttunementProfile>> {
+  const adjusted: Partial<Record<Attunement, AttunementProfile>> = {};
+
+  for (const slot of ATTUNEMENTS) {
+    const published = ATTUNEMENT_TABLE[slot];
+    const override = levers.attunement[slot];
+    adjusted[slot] = override === null ? published : { ...published, multiplier: override };
+  }
+
+  return {
+    ascendant: adjusted.ascendant ?? ATTUNEMENT_TABLE.ascendant,
+    neutral: adjusted.neutral ?? ATTUNEMENT_TABLE.neutral,
+    suppressed: adjusted.suppressed ?? ATTUNEMENT_TABLE.suppressed,
+  };
+}
+
+/**
+ * `run.rules` with §10's relics folded in.
+ *
+ * The knobs stay the player's (or the console's); the relics ride on top, so
+ * retuning `guardGain` at the console and holding Second Wind compose rather
+ * than one silently winning.
+ */
+export function combatRulesFor(run: RunState): CombatRules {
+  const levers = leversFor(run.relics);
+
+  return {
+    ...run.rules,
+    guardGain: Math.max(0, run.rules.guardGain + levers.guardGain),
+    guardDraw: Math.max(0, run.rules.guardDraw + levers.guardDraw),
+    firstStagger: Math.max(1, run.rules.firstStagger + levers.staggerTicks),
+  };
 }
 
 /** Which Depth the run is in, counting from 1 (GDD §11). */
@@ -240,15 +314,28 @@ export function encounterSetupFor(run: RunState, node: MapNode): CombatSetup {
         );
 
   return {
-    actors: [{ ...PLAYER_SEED, hp: run.hp, maxHp: run.maxHp }, ...enemies],
+    actors: [
+      {
+        ...PLAYER_SEED,
+        hp: run.hp,
+        maxHp: run.maxHp,
+        // GDD §10 Undertow: −10 Speed. Applied to the seed rather than inside
+        // combat, because §12.1 is explicit that enemy Speed never scales and a
+        // relic is the player's — folding it into `actorSpeed` would have put it
+        // on both sides.
+        baseSpeed: Math.max(1, PLAYER_SEED.baseSpeed + leversFor(run.relics).speedDelta),
+      },
+      ...enemies,
+    ],
     catalogue: SKILLS.catalogue,
     deck: run.deck,
     // Hashed rather than added, so two nodes at different Depths cannot share
     // a shuffle — `seed + index` collided as soon as there was more than a line.
     rng: createRng(combatSeedFor(run, node), 'combat'),
-    rules: run.rules,
+    rules: combatRulesFor(run),
     weave: weaveSnapshot(run),
     build: run.build,
+    levers: leversFor(run.relics),
   };
 }
 
@@ -303,6 +390,17 @@ export function nodeStandingOn(run: RunState): MapNode | null {
  * A Dungeon flagged elite pays the elite row even though it is the same node
  * kind — §12 makes an elite a property of the encounter, not a place.
  */
+/**
+ * GDD §10 Prospector's Eye: *"+1 material tier from elites"* — elites only, so
+ * a normal fight's Shard stays a Shard, and the top of §9's ladder still caps it.
+ */
+function liftedMaterial(material: GemTier | null, kind: RewardKind, by: number): GemTier | null {
+  if (material === null || by === 0 || kind !== 'elite') return material;
+
+  const lifted = material + by;
+  return GEM_TIERS.find((tier) => tier === lifted) ?? material;
+}
+
 export function rewardKindOf(run: RunState): RewardKind {
   const node = nodeStandingOn(run);
   if (node === null) return 'normal';
@@ -428,7 +526,14 @@ export function absorbEncounter(run: RunState, result: EncounterResult): RunStat
   // GDD §9's sources table, replacing M1's D19 stand-in — that granted a
   // material on every clear and Insight on a fixed cadence, because there was
   // no notion of an elite or a boss to pay differently. There is now.
-  const rolled = draw(grown, 'reward', (rng) => rollReward(rewardKindOf(run), rng));
+  const kind = rewardKindOf(run);
+  const rolled = draw(grown, 'reward', (rng) => rollReward(kind, rng));
+  // GDD §10's Economy relics ride on §9's table rather than replacing it:
+  // Prospector's Eye lifts an elite's material a tier and takes a fifth of all
+  // gold, so both are applied to what the row already paid.
+  const levers = leversFor(run.relics);
+  const paidGold = Math.round(rolled.value.gold * levers.goldMult);
+  const earned = liftedMaterial(rolled.value.material, kind, levers.eliteMaterialTier);
 
   const banked: RunState = {
     ...grown,
@@ -440,11 +545,8 @@ export function absorbEncounter(run: RunState, result: EncounterResult): RunStat
     // until the player spends a node on healing it (GDD §4.10 [AMD]).
     hp: Math.min(result.hp, grown.maxHp),
     saturation: recordEncounter(run.saturation, dominant),
-    gold: grown.gold + rolled.value.gold,
-    materials:
-      rolled.value.material === null
-        ? grown.materials
-        : grantMaterial(grown.materials, rolled.value.material),
+    gold: grown.gold + paidGold,
+    materials: earned === null ? grown.materials : grantMaterial(grown.materials, earned),
     insight: grown.insight + rolled.value.insight + paid,
   };
 
@@ -537,13 +639,7 @@ export function reroll(run: RunState, gem: GemId): ForgeResult<GemId> {
 
 /** One socket attempt on one card (GDD §6.1). Costs Max HP either way. */
 export function openSocket(run: RunState, card: CardId): ForgeResult<boolean> {
-  const query = {
-    sockets: socketsOf(run.build.sockets, card),
-    maxHp: run.maxHp,
-    floor: maxHpFloor(run),
-    insight: run.insight,
-  };
-
+  const query = socketQueryFor(run, card);
   const attempted = draw(run, 'gemRoll', (rng) => attemptSocket(query, rng));
   if ('reason' in attempted.value) return { ok: false, reason: attempted.value.reason };
 

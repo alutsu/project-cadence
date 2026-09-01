@@ -16,7 +16,9 @@ import { TAGS, tagTable, type Tag } from './tag.ts';
  */
 
 /** GDD §7.1: two tags are raised and two are pushed down at run start. */
-export type Attunement = 'ascendant' | 'neutral' | 'suppressed';
+export const ATTUNEMENTS = ['ascendant', 'neutral', 'suppressed'] as const;
+
+export type Attunement = (typeof ATTUNEMENTS)[number];
 
 export interface AttunementProfile {
   readonly multiplier: number;
@@ -91,8 +93,21 @@ export function resistTo(resisted: Partial<Record<Tag, number>>): ResistanceTabl
  */
 export interface WeaveSnapshot {
   readonly attunement: Readonly<Record<Tag, Attunement>>;
-  /** GDD §7.3, per tag, already capped at 30% by the run layer's fold. */
+  /** GDD §7.3, per tag, already capped by the run layer's fold. */
   readonly saturation: Readonly<Record<Tag, number>>;
+  /**
+   * What each slot is worth (GDD §7.1).
+   *
+   * Carried here rather than read from `ATTUNEMENT_TABLE`, because §10's Weave
+   * relics rewrite it — Prism caps Ascendant at 1.15 and lifts Suppressed to
+   * 0.85, Zealot's Blinders raises Ascendant to 1.7. A module constant cannot be
+   * rewritten per run without two otherwise-identical states behaving
+   * differently, which is the same argument `rules` already lives here for.
+   *
+   * Optional so that M0's every test and the harness keep meaning the published
+   * table without saying so.
+   */
+  readonly profiles?: Readonly<Record<Attunement, AttunementProfile>>;
 }
 
 /** No tag raised, none pushed down, nothing saturated. The M0 baseline. */
@@ -139,7 +154,7 @@ export function weaveVerdict(query: WeaveQuery): TagVerdict {
   const attunement = weave.attunement[tag];
   const saturation = weave.saturation[tag];
   const resistance = resistances[tag];
-  const profile = ATTUNEMENT_TABLE[attunement];
+  const profile = (weave.profiles ?? ATTUNEMENT_TABLE)[attunement];
 
   const shared = {
     tag,

@@ -168,7 +168,7 @@ answers the question before a single node is drawn.
 | **S3** | 4 | §11's map on the `map` stream: 4 Depths, 2-of-4 node choice, Omen tags, Threat per node; a run-flow reducer so the harness plays the *shipping* flow | **done** (`c77656d`). The map is drawn once at run start, so no route can move the stream |
 | **S4** | 4 | §12.1's generator on `enemyGen`; the archetype roster grown to feed it; `ENCOUNTERS` demoted to fixtures | **done** (`119c1dd`, `4c337eb`). Archetypes carry a cost *and* a minimum level: cost decides how many, level decides which |
 | **S5** | 4 | §9's ledger — gold, the Market, card removal at 60/120/240/480 | **done.** Gold, the reward table, the Market screen, material purchase and card removal. Relic purchase waits on S6 |
-| **S6** | 5 | Relics: the atom registry, ~8 of §10's 24, elites as their source | **not started.** Elites are generated and flagged on the map but drop nothing |
+| **S6** | 5 | Relics: the atom registry, ~8 of §10's 24, elites as their source | **rules done**, acquisition not. All eight of §10's named relics work end to end — data, parser, atom registry, and every lever wired to the system it moves. Elites still drop nothing and the Market's relic shelf is still empty; both are acquisition, and both are next |
 | **S7** | 5 | The Clockeater (§12.3); §13's run summary and "retry this seed"; MapScene and the scene split | **not started.** A boss node currently generates like a Dungeon — a playtest met a lone Emberhide as a Depth-1 boss. `CombatScene` is still the only scene, so the map is walked by a stand-in that takes the first node offered |
 | **S8** | 4 | Balance against §19; the 35-minute timing budget (§11); then the gate | **not started**, and it inherits three unresolved findings — see §4.1 |
 

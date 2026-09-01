@@ -1,0 +1,93 @@
+{
+  "_comment": "Relics (GDD §10). Passive permanent modifiers, one per elite kill (choice of two) plus Market purchases. These are the eight §10 authors by name, so none of them is invented here. Every relic carries a real drawback and the parser refuses one that does not: §10 is explicit that a pure upgrade creates a known-correct relic ranking, which is exactly the meta this design exists to avoid. A relic is data naming registered atoms (docs/M2_PLAN.md D39); the atoms are code, and an atom nobody has registered is a real design change rather than a silent extension point.",
+  "relics": [
+    {
+      "id": "metronome",
+      "name": "Metronome",
+      "category": "Timeline",
+      "gain": "your first action each encounter costs 0 Weight",
+      "drawback": "and every action after it costs 1 more",
+      "atoms": [
+        { "type": "FREE_FIRST_WEIGHT", "value": 1 },
+        { "type": "WEIGHT_DELTA", "value": 1 }
+      ]
+    },
+    {
+      "id": "undertow",
+      "name": "Undertow",
+      "category": "Timeline",
+      "gain": "Stagger you apply lasts 1 tick longer",
+      "drawback": "and you are 10 Speed slower",
+      "atoms": [
+        { "type": "STAGGER_TICKS", "value": 1 },
+        { "type": "SPEED_DELTA", "value": -10 }
+      ]
+    },
+    {
+      "id": "prospectors_eye",
+      "name": "Prospector's Eye",
+      "category": "Economy",
+      "gain": "elites drop a material one tier higher",
+      "drawback": "and all gold is cut by a fifth",
+      "atoms": [
+        { "type": "ELITE_MATERIAL_TIER", "value": 1 },
+        { "type": "GOLD_MULT", "value": -0.2 }
+      ]
+    },
+    {
+      "id": "prism",
+      "name": "Prism",
+      "category": "Weave",
+      "gain": "Suppressed tags only fall to 0.85",
+      "drawback": "and Ascendant tags only rise to 1.15",
+      "atoms": [
+        { "type": "ATTUNEMENT_MULT", "value": 0.85, "slot": "suppressed" },
+        { "type": "ATTUNEMENT_MULT", "value": 1.15, "slot": "ascendant" }
+      ]
+    },
+    {
+      "id": "zealots_blinders",
+      "name": "Zealot's Blinders",
+      "category": "Weave",
+      "gain": "Ascendant tags rise to 1.7",
+      "drawback": "and Saturation climbs to 50% instead of 30%",
+      "atoms": [
+        { "type": "ATTUNEMENT_MULT", "value": 1.7, "slot": "ascendant" },
+        { "type": "SATURATION_CAP", "value": 0.5 }
+      ]
+    },
+    {
+      "id": "bone_ledger",
+      "name": "Bone Ledger",
+      "category": "Socket",
+      "gain": "socket attempts cost 4% less Max HP",
+      "drawback": "and a failure Scars a second card as well",
+      "atoms": [
+        { "type": "SOCKET_COST_DELTA", "value": -0.04 },
+        { "type": "SCAR_SPREADS", "value": 1 }
+      ]
+    },
+    {
+      "id": "second_wind",
+      "name": "Second Wind",
+      "category": "Deck",
+      "gain": "the Guard action draws 2 cards instead of 1",
+      "drawback": "and puts up 1 less Guard",
+      "atoms": [
+        { "type": "GUARD_DRAW", "value": 1 },
+        { "type": "GUARD_GAIN", "value": -1 }
+      ]
+    },
+    {
+      "id": "glass_sigil",
+      "name": "Glass Sigil",
+      "category": "Risk",
+      "gain": "you deal 30% more damage",
+      "drawback": "and take 30% more",
+      "atoms": [
+        { "type": "DAMAGE_DEALT_MULT", "value": 0.3 },
+        { "type": "DAMAGE_TAKEN_MULT", "value": 0.3 }
+      ]
+    }
+  ]
+}

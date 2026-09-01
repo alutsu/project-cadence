@@ -78,7 +78,13 @@ export class Hand {
     const player = playerActor(state);
 
     this.faces = cards.map((card, index) => {
-      const resolved = resolveCard(state.weave, card, state.build);
+      const resolved = resolveCard({
+        weave: state.weave,
+        card,
+        build: state.build,
+        levers: state.levers,
+        committed: player?.actionsCommitted ?? 0,
+      });
       const face = new CardFace({
         scene: this.options.scene,
         card,

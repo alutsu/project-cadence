@@ -12,6 +12,7 @@ import type { StatusApplication } from './status.ts';
 import type { Tag } from './tag.ts';
 import { damagePerTarget } from './targeting.ts';
 import { tick, type Tick } from './tick.ts';
+import { NO_LEVERS, type RelicLevers } from './relicEffects.ts';
 import { ATTUNEMENT_TABLE, type WeaveSnapshot } from './weave.ts';
 
 /**
@@ -77,8 +78,25 @@ const MIN_STRIKES = 1;
  * sum that ends up positive (docs/M1_PLAN.md D17).
  */
 function riddenWeight(base: Tick, weave: WeaveSnapshot, tag: Tag): Tick {
-  const rider = ATTUNEMENT_TABLE[weave.attunement[tag]].weightDelta;
+  // Read from the snapshot's own table, not the module constant: §10's Weave
+  // relics rewrite it, and a rider from one table with a multiplier from another
+  // would be two different Weaves in one strike.
+  const rider = (weave.profiles ?? ATTUNEMENT_TABLE)[weave.attunement[tag]].weightDelta;
   return tick(Math.max(MIN_WEIGHT, base + rider));
+}
+
+/**
+ * GDD §10 Metronome: *"your first action each encounter costs 0 Weight"*.
+ *
+ * Zero, not one — the floor `MIN_WEIGHT` exists to stop an actor acting again on
+ * the tick it acted, and a *single* free action cannot loop, because the next
+ * one is no longer the first. So the floor is deliberately bypassed here, and
+ * only here.
+ */
+function relicWeight(base: Tick, levers: RelicLevers, committed: number): Tick {
+  if (levers.freeFirstWeight && committed === 0) return tick(0);
+  if (levers.weightDelta === 0) return base;
+  return tick(Math.max(MIN_WEIGHT, base + levers.weightDelta));
 }
 
 /** Every gem seated in the card, folded in socket order (docs/M1_PLAN.md D33). */
@@ -119,11 +137,28 @@ function lingered(
 }
 
 /** Everything about a play that does not depend on who receives it. */
-export function resolveCard(
-  weave: WeaveSnapshot,
-  card: CardDefinition,
-  build: BuildState = EMPTY_BUILD,
-): ResolvedCard {
+/**
+ * Everything one resolution needs. An options object because §10's relics made
+ * it a fourth argument, and four positional arguments is where a call site stops
+ * saying what it means (CLAUDE.md §5.2).
+ */
+export interface ResolveQuery {
+  readonly weave: WeaveSnapshot;
+  readonly card: CardDefinition;
+  readonly build?: BuildState;
+  /** GDD §10's folded levers. Omitted means no relics held. */
+  readonly levers?: RelicLevers;
+  /**
+   * Actions the actor has already committed this encounter — §10's Metronome
+   * makes the first one free, and "first" is only knowable from here.
+   */
+  readonly committed?: number;
+}
+
+export function resolveCard(query: ResolveQuery): ResolvedCard {
+  const { weave, card } = query;
+  const build = query.build ?? EMPTY_BUILD;
+  const levers = query.levers ?? NO_LEVERS;
   const modifier = seatedModifier(card, gemsIn(build, card.id), build);
 
   // KINDLE converts before the Weave is consulted, because §6.2's drawback is
@@ -137,7 +172,11 @@ export function resolveCard(
     tag,
     targeting: card.targeting,
     basePerTarget: damagePerTarget(card) * modifier.damageMult,
-    weight: riddenWeight(tick(Math.max(0, card.weight + modifier.weightDelta)), weave, tag),
+    weight: relicWeight(
+      riddenWeight(tick(Math.max(0, card.weight + modifier.weightDelta)), weave, tag),
+      levers,
+      query.committed ?? 0,
+    ),
     recovery: tick(Math.max(MIN_RECOVERY, card.recovery + modifier.recoveryDelta)),
     strikes: Math.max(MIN_STRIKES, 1 + modifier.extraStrikes),
     poiseFactor: modifier.poiseFactor,

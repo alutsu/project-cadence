@@ -31,6 +31,14 @@ export interface CombatRules {
   readonly guardGain: number;
   /** GDD §4.6: the first Stagger's delay, before the ladder halves it. */
   readonly firstStagger: number;
+  /**
+   * GDD §4.3: cards the Guard action draws.
+   *
+   * A literal `1` until §10's Second Wind needed it to be 2. It was already
+   * typed config in every other respect — the Weight and the gain beside it are
+   * — so it becomes so here rather than growing a special case at the call site.
+   */
+  readonly guardDraw: number;
 }
 
 export const DEFAULT_RULES: CombatRules = {
@@ -40,6 +48,7 @@ export const DEFAULT_RULES: CombatRules = {
   guardWeight: tick(3),
   guardGain: 3,
   firstStagger: 3,
+  guardDraw: 1,
 };
 
 /** What each candidate rule is actually testing (GDD §22 Q1). */
